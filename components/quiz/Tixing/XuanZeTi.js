@@ -26,12 +26,26 @@ import {
 
 const TTS_VOICES = {
   zh: 'zh-CN-XiaoxiaoMultilingualNeural',
-  my: 'my-MM-ThihaNeural',
+  my: 'my-MM-NilarNeural',
   en: 'en-US-JennyNeural',
 };
 
 const TEACHER_IMAGE_URL =
   'https://audio.886.best/chinese-vocab-audio/%E5%9B%BE%E7%89%87/1765952194374.png';
+
+const DEFAULT_INTERACTIVE_PREFS = {
+  showQuestionPinyin: true,
+  showOptionPinyin: true,
+  autoPlay: true,
+  ttsSpeed: 'normal',
+};
+
+function getMergedInteractivePrefs() {
+  return {
+    ...DEFAULT_INTERACTIVE_PREFS,
+    ...(getSavedInteractivePrefs() || {}),
+  };
+}
 
 const cssStyles = `
 .xzt-container {
@@ -967,6 +981,24 @@ function renderTextWithOptionalPinyin(text, showPinyin, textClass = 'zh-char', p
   });
 }
 
+function hashStringToSeed(input = '') {
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function seededRandom(seed) {
+  let t = seed + 0x6d2b79f5;
+  return function next() {
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function useTimeoutManager() {
   const timeoutsRef = useRef(new Set());
 
@@ -1195,26 +1227,38 @@ export default function XuanZeTi({
   const question = data.question || {};
   const questionText = typeof question === 'string' ? question : question.text || '';
   const questionImg = data.imageUrl || '';
-  const options = Array.isArray(data.options) ? data.options : [];
+
+  const options = useMemo(
+    () => (Array.isArray(data.options) ? data.options : []),
+    [data.options]
+  );
 
   const correctAnswers = useMemo(() => {
     const raw = data.correctAnswer || [];
     return (Array.isArray(raw) ? raw : [raw]).map(String);
   }, [data.correctAnswer]);
 
-  const optionShuffleKey = useMemo(() => {
-    const optionIds = options.map((opt) => String(opt.id)).join('|');
-    return `${data?.id || questionText}__${optionIds}`;
-  }, [data?.id, options, questionText]);
+  const optionSignature = useMemo(
+    () => options.map((opt) => `${String(opt.id)}:${opt.text || ''}`).join('|'),
+    [options]
+  );
+
+  const optionShuffleKey = useMemo(
+    () => `${data?.id || questionText || 'question'}__${optionSignature}`,
+    [data?.id, questionText, optionSignature]
+  );
 
   const shuffledOptions = useMemo(() => {
     const nextOptions = [...options];
+    const random = seededRandom(hashStringToSeed(optionShuffleKey));
+
     for (let i = nextOptions.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [nextOptions[i], nextOptions[j]] = [nextOptions[j], nextOptions[i]];
     }
+
     return nextOptions;
-  }, [optionShuffleKey]);
+  }, [options, optionShuffleKey]);
 
   const hasOptionImages = useMemo(
     () => shuffledOptions.some((opt) => opt.img || opt.imageUrl),
@@ -1231,8 +1275,8 @@ export default function XuanZeTi({
   const [cardPopId, setCardPopId] = useState(null);
   const [questionImgVisible, setQuestionImgVisible] = useState(Boolean(questionImg));
 
-  const [prefs, setPrefs] = useState(() => getSavedInteractivePrefs());
-  const [aiSettings, setAISettings] = useState(() => getSavedInteractiveAISettings());
+  const [prefs, setPrefs] = useState(() => getMergedInteractivePrefs());
+  const [aiSettings] = useState(() => getSavedInteractiveAISettings());
 
   const audioControllerRef = useRef(new AudioPlaybackController());
   const mountedRef = useRef(false);
@@ -1299,19 +1343,19 @@ export default function XuanZeTi({
   }, []);
 
   const feedbackTap = useCallback(() => {
-    if (aiSettings.vibration) vibrate(15);
-    if (aiSettings.soundFx) playBeep('tap');
-  }, [aiSettings.soundFx, aiSettings.vibration]);
+    if (aiSettings?.vibration) vibrate(15);
+    if (aiSettings?.soundFx) playBeep('tap');
+  }, [aiSettings]);
 
   const feedbackCorrect = useCallback(() => {
-    if (aiSettings.vibration) vibrate([30, 40, 30]);
-    if (aiSettings.soundFx) playBeep('correct');
-  }, [aiSettings.soundFx, aiSettings.vibration]);
+    if (aiSettings?.vibration) vibrate([30, 40, 30]);
+    if (aiSettings?.soundFx) playBeep('correct');
+  }, [aiSettings]);
 
   const feedbackWrong = useCallback(() => {
-    if (aiSettings.vibration) vibrate([40, 40, 40]);
-    if (aiSettings.soundFx) playBeep('wrong');
-  }, [aiSettings.soundFx, aiSettings.vibration]);
+    if (aiSettings?.vibration) vibrate([40, 40, 40]);
+    if (aiSettings?.soundFx) playBeep('wrong');
+  }, [aiSettings]);
 
   const playQuestion = useCallback(() => {
     if (!questionText) return;
@@ -1383,7 +1427,7 @@ export default function XuanZeTi({
 
     const onPopState = () => {
       closeTopOverlay({
-        'settings': closeSettings,
+        settings: closeSettings,
       });
     };
 
@@ -1462,23 +1506,46 @@ export default function XuanZeTi({
     openOverlay('settings', setShowSettings);
   }, [openOverlay]);
 
-  // ====================== 核心改动：跳转 DeepSeek 并带参数 ======================
   const handleOpenDeepSeekWeb = useCallback(() => {
     stopAllAudio();
 
-    const wrongText = shuffledOptions.find(o => selectedIds.includes(String(o.id)))?.text || '';
-    const correctText = shuffledOptions.find(o => correctAnswers.includes(String(o.id)))?.text || '';
-    const prompt = [
-      '我正在学习语言，这道选择题我答错了，请你用中文详细讲解语法点和词汇用法：',
-      `【题目】${questionText}`,
-      `【我的选择】${wrongText}`,
-      `【正确答案】${correctText}`,
-      '请以严厉但温柔的私教口吻，分析错误原因，对比正确选项与错误选项的区别，并提示记忆要点。',
-    ].join('\n');
+    const selectedTexts = shuffledOptions
+      .filter((option) => selectedIds.includes(String(option.id)))
+      .map((option) => option.text || `选项 ${option.id}`)
+      .filter(Boolean);
 
-    // 打开 DeepSeek，附带 auto_prompt 参数，由油猴脚本自动填入并发送
-    window.open(`https://chat.deepseek.com/?auto_prompt=${encodeURIComponent(prompt)}`, '_blank');
-  }, [stopAllAudio, questionText, shuffledOptions, selectedIds, correctAnswers]);
+    const correctTexts = shuffledOptions
+      .filter((option) => correctAnswers.includes(String(option.id)))
+      .map((option) => option.text || `选项 ${option.id}`)
+      .filter(Boolean);
+
+    const wrongText = selectedTexts.length ? selectedTexts.join('；') : '未选择';
+    const correctText = correctTexts.length ? correctTexts.join('；') : '未知';
+
+    const qText = [
+      questionText ? `题干：${questionText}` : '',
+      questionImg ? `题目图片：${questionImg}` : '',
+      shuffledOptions.length
+        ? `选项：${shuffledOptions
+            .map((option) => `${String(option.id)}. ${option.text || ''}`)
+            .join('；')}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const payload = `${qText}||${wrongText}||${correctText}`;
+    const url = `https://chat.deepseek.com/?auto_prompt=${encodeURIComponent(payload)}`;
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [
+    stopAllAudio,
+    questionText,
+    questionImg,
+    shuffledOptions,
+    selectedIds,
+    correctAnswers,
+  ]);
 
   return (
     <div className={`xzt-container ${hasOverlayOpen ? 'settings-open' : ''}`}>
@@ -1594,14 +1661,12 @@ export default function XuanZeTi({
         </div>
 
         <div className="sheet-sub">
-          {isRight ? '太棒了，继续前进。' : '你已经很接近正确答案了。'}
+          {isRight ? '太棒了，也可以看看为什么对。' : '你已经很接近正确答案了。'}
         </div>
 
-        {!isRight ? (
-          <button className="ai-btn" onClick={handleOpenDeepSeekWeb} type="button">
-            <FaRobot /> AI 自动提问到 DeepSeek
-          </button>
-        ) : null}
+        <button className="ai-btn" onClick={handleOpenDeepSeekWeb} type="button">
+          <FaRobot /> {isRight ? '为什么对？' : 'AI 解析'}
+        </button>
 
         <button
           className={`next-btn ${isRight ? 'btn-correct' : 'btn-wrong'}`}
@@ -1611,7 +1676,7 @@ export default function XuanZeTi({
           }}
           type="button"
         >
-          继续 <FaArrowRight />
+          下一题 <FaArrowRight />
         </button>
       </div>
 
