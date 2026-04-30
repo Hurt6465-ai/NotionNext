@@ -1523,7 +1523,7 @@ export default function XuanZeTi({
     const correctText = correctTexts.length ? correctTexts.join('；') : '未知';
 
     const qText = [
-      questionText ? `题干：${questionText}` : '',
+      questionText || '',
       questionImg ? `题目图片：${questionImg}` : '',
       shuffledOptions.length
         ? `选项：${shuffledOptions
