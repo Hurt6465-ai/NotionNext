@@ -16,6 +16,7 @@ import {
   FaCog,
 } from 'react-icons/fa';
 import { pinyin } from 'pinyin-pro';
+import InteractiveAIExplanationPanel from '../../ai/InteractiveAIExplanationPanel';
 import {
   getSavedInteractivePrefs,
   getSavedInteractiveAISettings,
@@ -33,17 +34,40 @@ const TTS_VOICES = {
 const TEACHER_IMAGE_URL =
   'https://audio.886.best/chinese-vocab-audio/%E5%9B%BE%E7%89%87/1765952194374.png';
 
-const DEFAULT_INTERACTIVE_PREFS = {
+const DEFAULT_PREFS = {
   showQuestionPinyin: true,
   showOptionPinyin: true,
   autoPlay: true,
   ttsSpeed: 'normal',
 };
 
-function getMergedInteractivePrefs() {
+const DEFAULT_AI_SETTINGS = {
+  aiMode: 'api', // api | deepseek
+  vibration: true,
+  soundFx: true,
+  ttsApiUrl: 'https://t.leftsite.cn/tts',
+  zhVoice: TTS_VOICES.zh,
+  myVoice: TTS_VOICES.my,
+};
+
+function getMergedPrefs() {
   return {
-    ...DEFAULT_INTERACTIVE_PREFS,
+    ...DEFAULT_PREFS,
     ...(getSavedInteractivePrefs() || {}),
+  };
+}
+
+function getMergedAISettings() {
+  const saved = getSavedInteractiveAISettings() || {};
+  return {
+    ...DEFAULT_AI_SETTINGS,
+    ...saved,
+    aiMode: saved.aiMode || 'api',
+    vibration: saved.vibration !== false,
+    soundFx: saved.soundFx !== false,
+    zhVoice: saved.zhVoice || TTS_VOICES.zh,
+    myVoice: saved.myVoice || TTS_VOICES.my,
+    ttsApiUrl: saved.ttsApiUrl || DEFAULT_AI_SETTINGS.ttsApiUrl,
   };
 }
 
@@ -58,11 +82,11 @@ const cssStyles = `
   position:relative;
   overflow:hidden;
 }
-.xzt-container.settings-open .result-sheet,
-.xzt-container.settings-open .submit-bar {
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
+.xzt-container.ai-open .result-sheet,
+.xzt-container.ai-open .submit-bar {
+  visibility:hidden;
+  opacity:0;
+  pointer-events:none;
 }
 .xzt-header {
   flex-shrink:0;
@@ -105,17 +129,19 @@ const cssStyles = `
   width:100%;
   display:flex;
   align-items:flex-start;
-  gap:12px;
-  margin-top:-4px;
+  gap:10px;
+  margin-top:0;
 }
 .teacher-img {
-  height:126px;
+  height:116px;
   object-fit:contain;
   flex-shrink:0;
-  margin-top:10px;
+  margin-top:14px;
+  filter:drop-shadow(0 8px 12px rgba(15,23,42,0.08));
 }
 .question-zone {
   flex:1;
+  min-width:0;
   display:flex;
   flex-direction:column;
   gap:10px;
@@ -123,28 +149,29 @@ const cssStyles = `
 
 .bubble-container {
   flex:1;
-  background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);
-  border-radius:18px;
-  padding:14px 14px 14px 10px;
-  border:2px solid #dbeafe;
   position:relative;
+  min-height:92px;
+  padding:16px 48px 16px 16px;
+  border-radius:22px;
+  border:2px solid #dbeafe;
+  border-bottom-width:5px;
+  background:#ffffff;
+  box-shadow:0 8px 18px rgba(37,99,235,0.08);
   display:flex;
-  align-items:flex-start;
-  gap:10px;
-  box-shadow:0 8px 18px rgba(37,99,235,0.08), 0 2px 0 rgba(59,130,246,0.05);
-  min-height:82px;
+  align-items:center;
+  overflow:visible;
 }
-
 .bubble-tail {
   position:absolute;
-  left:-10px;
-  top:22px;
-  width:12px;
-  height:12px;
+  left:-9px;
+  top:31px;
+  width:16px;
+  height:16px;
   background:#ffffff;
   border-left:2px solid #dbeafe;
   border-bottom:2px solid #dbeafe;
   transform:rotate(45deg);
+  border-bottom-left-radius:4px;
 }
 
 .bubble-text {
@@ -153,111 +180,122 @@ const cssStyles = `
   display:flex;
   flex-wrap:wrap;
   align-items:flex-end;
-  gap:2px 3px;
-  color:#1e293b;
+  gap:3px 4px;
+  color:#3c3c3c;
+  line-height:1.55;
 }
 
 .zh-seg {
   display:inline-flex;
   flex-direction:column;
   align-items:center;
+  justify-content:flex-end;
   margin:0 1px;
 }
 
+/* 修复一声/带声调拼音上下偏移 */
 .zh-py {
-  font-size:0.66rem;
+  display:block;
+  min-height:15px;
+  height:15px;
+  line-height:15px;
+  font-size:0.64rem;
   color:#94a3b8;
-  line-height:1;
-  font-weight:700;
-  margin-bottom:2px;
+  font-weight:800;
+  margin-bottom:3px;
+  text-align:center;
+  font-family:Arial, "Helvetica Neue", "Noto Sans", sans-serif;
+  text-rendering:geometricPrecision;
+  -webkit-font-smoothing:antialiased;
 }
 
 .zh-char {
-  font-size:1.38rem;
+  font-size:1.34rem;
   font-weight:900;
   color:#1e293b;
   line-height:1.18;
 }
-
 .bubble-text.is-long .zh-char {
-  font-size:1.22rem;
+  font-size:1.18rem;
 }
-
 .bubble-text.is-very-long .zh-char {
-  font-size:1.06rem;
+  font-size:1.04rem;
 }
-
 .bubble-text.is-long .zh-py {
-  font-size:0.60rem;
+  font-size:0.58rem;
+  min-height:14px;
+  height:14px;
+  line-height:14px;
 }
 
 .my-seg {
-  font-size:0.98rem;
-  font-weight:700;
+  font-size:1rem;
+  font-weight:800;
   color:#334155;
   white-space:pre-wrap;
   line-height:1.85;
   word-break:break-word;
   overflow-wrap:anywhere;
 }
-
 .bubble-text.is-myanmar .my-seg {
-  font-size:0.96rem;
+  font-size:0.98rem;
   line-height:1.9;
 }
-
 .bubble-text.is-myanmar.is-long .my-seg {
-  font-size:0.91rem;
+  font-size:0.93rem;
   line-height:1.95;
 }
-
 .bubble-text.is-myanmar.is-very-long .my-seg {
-  font-size:0.87rem;
+  font-size:0.88rem;
   line-height:2;
 }
 
 .inline-seg {
-  font-size:0.98rem;
-  font-weight:700;
+  font-size:1rem;
+  font-weight:800;
   color:#475569;
   white-space:pre-wrap;
-  line-height:1.6;
+  line-height:1.65;
 }
 
 .bubble-audio-btn {
+  position:absolute;
+  right:12px;
+  top:12px;
   flex-shrink:0;
-  width:28px;
-  height:28px;
-  margin-top:2px;
+  width:31px;
+  height:31px;
+  margin:0;
   border-radius:9999px;
-  border:1.5px solid #dbeafe;
+  border:2px solid #ddf4ff;
   background:#ffffff;
-  color:#3b82f6;
+  color:#1cb0f6;
   display:flex;
   align-items:center;
   justify-content:center;
   cursor:pointer;
-  box-shadow:0 2px 6px rgba(59,130,246,0.08);
+  box-shadow:0 3px 0 #ddf4ff;
 }
-
 .bubble-audio-btn.playing {
-  background:#eff6ff;
-  color:#2563eb;
-  border-color:#93c5fd;
+  background:#ddf4ff;
+  color:#1cb0f6;
+  border-color:#84d8ff;
+  box-shadow:0 3px 0 #84d8ff;
 }
-
 .bubble-audio-btn:active {
-  transform:scale(0.96);
+  transform:translateY(3px);
+  box-shadow:none;
 }
 
 .question-image {
   width:100%;
   max-width:310px;
   align-self:center;
-  border-radius:16px;
-  border:2px solid #f1f5f9;
+  border-radius:18px;
+  border:2px solid #e5e5e5;
+  border-bottom-width:5px;
   background:#fff;
-  box-shadow:0 8px 20px rgba(15,23,42,0.06);
+  box-shadow:0 2px 0 rgba(0,0,0,0.02);
   object-fit:cover;
 }
 
@@ -302,24 +340,24 @@ const cssStyles = `
   border-bottom-width:3px;
 }
 .option-card.selected {
-  border-color:#84cc16;
-  background:#f7fee7;
-  color:#4d7c0f;
+  border-color:#58cc02;
+  background:#d7ffb8;
+  color:#3f7d20;
 }
 .option-card.playing {
-  border-color:#60a5fa;
-  background:#eff6ff;
-  color:#1d4ed8;
+  border-color:#84d8ff;
+  background:#ddf4ff;
+  color:#1cb0f6;
 }
 .option-card.correct {
-  border-color:#84cc16;
-  background:#dcfce7;
-  color:#365314;
+  border-color:#58cc02;
+  background:#d7ffb8;
+  color:#3f7d20;
 }
 .option-card.wrong {
-  border-color:#fca5a5;
-  background:#fff5f5;
-  color:#c2410c;
+  border-color:#ff4b4b;
+  background:#ffdfe0;
+  color:#d32626;
 }
 .option-card.locked {
   cursor:default;
@@ -337,18 +375,28 @@ const cssStyles = `
   align-items:center;
   justify-content:center;
 }
+
+/* 修复整行拼音声调偏移 */
 .option-py {
+  display:block;
+  min-height:18px;
+  height:18px;
+  line-height:18px;
   font-size:.68rem;
   color:#94a3b8;
-  line-height:1;
-  font-weight:700;
+  font-weight:800;
   margin-bottom:4px;
   text-align:center;
+  font-family:Arial, "Helvetica Neue", "Noto Sans", sans-serif;
+  text-rendering:geometricPrecision;
+  -webkit-font-smoothing:antialiased;
 }
+
 .option-text {
   font-size:1.15rem;
-  font-weight:700;
+  font-weight:900;
   text-align:center;
+  color:inherit;
 }
 
 .submit-bar {
@@ -361,7 +409,7 @@ const cssStyles = `
   display:flex;
   justify-content:center;
   z-index:30;
-  transition:opacity 0.3s;
+  transition:opacity .3s;
 }
 .submit-btn {
   width:100%;
@@ -373,10 +421,10 @@ const cssStyles = `
   background:#58cc02;
   color:#fff;
   border:none;
-  border-bottom:4px solid #46a302;
+  border-bottom:5px solid #46a302;
   cursor:pointer;
   transition:all .1s;
-  box-shadow:0 4px 12px rgba(88,204,2,0.25);
+  box-shadow:0 6px 16px rgba(88,204,2,.22);
 }
 .submit-btn:active {
   transform:translateY(4px);
@@ -403,8 +451,8 @@ const cssStyles = `
   flex-direction:column;
   gap:12px;
   transform:translateY(100%);
-  transition:transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s;
-  box-shadow:0 -10px 30px rgba(0,0,0,0.08);
+  transition:transform .3s cubic-bezier(.175,.885,.32,1.275), opacity .3s;
+  box-shadow:0 -10px 30px rgba(0,0,0,.08);
   z-index:100;
 }
 .result-sheet.show {
@@ -412,13 +460,12 @@ const cssStyles = `
 }
 .result-sheet.correct {
   background:#d7ffb8;
-  border-top:3px solid #a3e635;
+  border-top:3px solid #58cc02;
 }
 .result-sheet.wrong {
   background:#ffdfe0;
-  border-top:3px solid #fca5a5;
+  border-top:3px solid #ff4b4b;
 }
-
 .sheet-header {
   display:flex;
   align-items:center;
@@ -430,33 +477,33 @@ const cssStyles = `
   color:#58cc02;
 }
 .result-sheet.wrong .sheet-header {
-  color:#ef4444;
+  color:#ff4b4b;
 }
 .sheet-sub {
-  font-size:0.95rem;
-  font-weight:700;
+  font-size:.95rem;
+  font-weight:800;
   color:#64748b;
   margin-bottom:8px;
 }
 
 .ai-btn {
   background:#fff;
-  padding:12px;
-  border-radius:14px;
+  padding:13px;
+  border-radius:16px;
   font-weight:900;
   color:#8b5cf6;
   border:2px solid #ddd6fe;
+  border-bottom-width:5px;
   display:flex;
   align-items:center;
   justify-content:center;
   gap:8px;
   cursor:pointer;
-  box-shadow:0 4px 0 #ddd6fe;
   margin-bottom:8px;
 }
 .ai-btn:active {
-  transform:translateY(4px);
-  box-shadow:none;
+  transform:translateY(3px);
+  border-bottom-width:2px;
 }
 
 .next-btn {
@@ -467,7 +514,7 @@ const cssStyles = `
   font-weight:900;
   color:#fff;
   border:none;
-  border-bottom:4px solid;
+  border-bottom:5px solid;
   cursor:pointer;
   display:flex;
   justify-content:center;
@@ -478,12 +525,12 @@ const cssStyles = `
 .btn-correct {
   background:#58cc02;
   border-bottom-color:#46a302;
-  box-shadow:0 4px 12px rgba(88,204,2,0.25);
+  box-shadow:0 6px 16px rgba(88,204,2,.22);
 }
 .btn-wrong {
-  background:#ef4444;
-  border-bottom-color:#dc2626;
-  box-shadow:0 4px 12px rgba(239,68,68,0.25);
+  background:#ff4b4b;
+  border-bottom-color:#d32626;
+  box-shadow:0 6px 16px rgba(255,75,75,.22);
 }
 .next-btn:active {
   transform:translateY(4px);
@@ -514,7 +561,7 @@ const cssStyles = `
   background:#fff;
   border:2px solid #e5e7eb;
   border-radius:20px;
-  box-shadow:0 20px 50px rgba(15,23,42,0.20);
+  box-shadow:0 20px 50px rgba(15,23,42,.20);
   padding:16px;
 }
 .panel-header {
@@ -562,6 +609,12 @@ const cssStyles = `
   font-weight:900;
   color:#334155;
 }
+.setting-desc {
+  font-size:11px;
+  color:#94a3b8;
+  font-weight:700;
+  margin-top:2px;
+}
 .switch {
   width:42px;
   height:24px;
@@ -569,6 +622,7 @@ const cssStyles = `
   position:relative;
   transition:all .2s;
   cursor:pointer;
+  flex:0 0 auto;
 }
 .switch-dot {
   position:absolute;
@@ -580,13 +634,18 @@ const cssStyles = `
   transition:all .2s;
   box-shadow:0 1px 4px rgba(0,0,0,.15);
 }
-.speed-group {
+.speed-group,
+.ai-mode-group {
   display:grid;
   grid-template-columns:repeat(3,1fr);
   gap:8px;
   margin-top:6px;
 }
-.speed-btn {
+.ai-mode-group {
+  grid-template-columns:1fr 1fr;
+}
+.speed-btn,
+.ai-mode-btn {
   border:2px solid #e5e7eb;
   background:#fff;
   color:#64748b;
@@ -596,7 +655,8 @@ const cssStyles = `
   padding:10px 0;
   cursor:pointer;
 }
-.speed-btn.active {
+.speed-btn.active,
+.ai-mode-btn.active {
   background:#ecfccb;
   border-color:#bef264;
   color:#3f6212;
@@ -606,7 +666,7 @@ const cssStyles = `
   animation:xzt-bounce .28s ease-out;
 }
 @keyframes xzt-bounce {
-  0% { transform:scale(0.97); }
+  0% { transform:scale(.97); }
   60% { transform:scale(1.02); }
   100% { transform:scale(1); }
 }
@@ -679,38 +739,56 @@ function playBeep(type = 'tap') {
     if (!AudioContextClass) return;
 
     const ctx = new AudioContextClass();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    let frequency = 520;
-    let duration = 0.06;
-    let volume = 0.03;
-
-    if (type === 'correct') {
-      frequency = 760;
-      duration = 0.1;
-      volume = 0.045;
-    } else if (type === 'wrong') {
-      frequency = 220;
-      duration = 0.12;
-      volume = 0.05;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
     }
 
-    osc.type = 'sine';
-    osc.frequency.value = frequency;
-    gain.gain.value = volume;
+    const tones =
+      type === 'correct'
+        ? [
+            { frequency: 720, start: 0, duration: 0.08, volume: 0.045 },
+            { frequency: 920, start: 0.09, duration: 0.11, volume: 0.04 },
+          ]
+        : type === 'wrong'
+        ? [
+            { frequency: 240, start: 0, duration: 0.1, volume: 0.055 },
+            { frequency: 170, start: 0.11, duration: 0.14, volume: 0.05 },
+          ]
+        : [{ frequency: 520, start: 0, duration: 0.06, volume: 0.03 }];
 
-    osc.start();
-    osc.stop(ctx.currentTime + duration);
+    tones.forEach((tone) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
 
-    osc.onended = () => {
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.type = 'sine';
+      osc.frequency.value = tone.frequency;
+
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + tone.start);
+      gain.gain.exponentialRampToValueAtTime(
+        tone.volume,
+        ctx.currentTime + tone.start + 0.01
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        ctx.currentTime + tone.start + tone.duration
+      );
+
+      osc.start(ctx.currentTime + tone.start);
+      osc.stop(ctx.currentTime + tone.start + tone.duration + 0.02);
+    });
+
+    const totalMs =
+      Math.max(...tones.map((tone) => tone.start + tone.duration)) * 1000 + 120;
+
+    setTimeout(() => {
       try {
         ctx.close();
       } catch (_) {}
-    };
+    }, totalMs);
   } catch (_) {}
 }
 
@@ -799,6 +877,7 @@ async function getTTSBlob(text, voice, rate = 0, apiUrl = 'https://t.leftsite.cn
     const response = await fetch(
       `${apiUrl}?t=${encodeURIComponent(text)}&v=${encodeURIComponent(voice)}&r=${rate}`
     );
+
     if (!response.ok) {
       throw new Error('TTS request failed');
     }
@@ -873,7 +952,7 @@ class AudioPlaybackController {
           segmentText,
           voice,
           rate,
-          aiSettings?.ttsApiUrl || 'https://t.leftsite.cn/tts'
+          aiSettings?.ttsApiUrl || DEFAULT_AI_SETTINGS.ttsApiUrl
         );
 
         if (requestId !== this.latestRequestId) return;
@@ -911,6 +990,7 @@ class AudioPlaybackController {
       playNext(0);
     } catch (error) {
       console.warn('[TTS Error]', error);
+
       if (requestId === this.latestRequestId) {
         this.currentAudio = null;
         onEnd?.();
@@ -924,7 +1004,10 @@ function getPinyinArraySafe(text = '') {
   if (!cleaned) return [];
 
   try {
-    return pinyin(cleaned, { type: 'array', toneType: 'symbol' });
+    return pinyin(cleaned, {
+      type: 'array',
+      toneType: 'symbol',
+    });
   } catch (_) {
     return [];
   }
@@ -938,8 +1021,11 @@ function getCachedPinyin(text = '') {
   if (pinyinCache.has(key)) return pinyinCache.get(key);
 
   let value = '';
+
   try {
-    value = pinyin(key.replace(/[^\u4e00-\u9fff]/g, ''), { toneType: 'symbol' });
+    value = pinyin(key.replace(/[^\u4e00-\u9fff]/g, ''), {
+      toneType: 'symbol',
+    });
   } catch (_) {
     value = '';
   }
@@ -957,6 +1043,7 @@ function renderTextWithOptionalPinyin(text, showPinyin, textClass = 'zh-char', p
   return parts.map((part, partIndex) => {
     if (/[\u4e00-\u9fff]/.test(part)) {
       const pinyinList = getPinyinArraySafe(part);
+
       return part.split('').map((char, charIndex) => (
         <div key={`${partIndex}-${charIndex}`} className="zh-seg">
           {showPinyin ? <span className={pyClass}>{pinyinList[charIndex] || ''}</span> : null}
@@ -983,15 +1070,18 @@ function renderTextWithOptionalPinyin(text, showPinyin, textClass = 'zh-char', p
 
 function hashStringToSeed(input = '') {
   let h = 2166136261;
+
   for (let i = 0; i < input.length; i += 1) {
     h ^= input.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
+
   return h >>> 0;
 }
 
 function seededRandom(seed) {
   let t = seed + 0x6d2b79f5;
+
   return function next() {
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
@@ -1066,13 +1156,28 @@ function useOverlayHistory() {
   };
 }
 
-const SettingsPanel = memo(function SettingsPanel({ prefs, onPrefsChange, onClose }) {
+const SettingsPanel = memo(function SettingsPanel({
+  prefs,
+  aiSettings,
+  onPrefsChange,
+  onAISettingsChange,
+  onClose,
+}) {
   const updatePref = useCallback(
     (key, value) => {
       onPrefsChange((prev) => ({ ...prev, [key]: value }));
     },
     [onPrefsChange]
   );
+
+  const updateAISetting = useCallback(
+    (key, value) => {
+      onAISettingsChange((prev) => ({ ...prev, [key]: value }));
+    },
+    [onAISettingsChange]
+  );
+
+  const aiMode = aiSettings?.aiMode || 'api';
 
   return (
     <div className="panel-modal">
@@ -1090,7 +1195,10 @@ const SettingsPanel = memo(function SettingsPanel({ prefs, onPrefsChange, onClos
         </div>
 
         <div className="setting-row">
-          <span className="setting-label">题干拼音</span>
+          <div>
+            <div className="setting-label">题干拼音</div>
+            <div className="setting-desc">长句和缅语题干会自动隐藏拼音</div>
+          </div>
           <div
             className="switch"
             onClick={() => updatePref('showQuestionPinyin', !prefs.showQuestionPinyin)}
@@ -1128,6 +1236,28 @@ const SettingsPanel = memo(function SettingsPanel({ prefs, onPrefsChange, onClos
           </div>
         </div>
 
+        <div className="setting-row">
+          <span className="setting-label">震动反馈</span>
+          <div
+            className="switch"
+            onClick={() => updateAISetting('vibration', !aiSettings.vibration)}
+            style={{ background: aiSettings.vibration ? '#58cc02' : '#cbd5e1' }}
+          >
+            <div className="switch-dot" style={{ left: aiSettings.vibration ? '22px' : '4px' }} />
+          </div>
+        </div>
+
+        <div className="setting-row">
+          <span className="setting-label">答题音效</span>
+          <div
+            className="switch"
+            onClick={() => updateAISetting('soundFx', !aiSettings.soundFx)}
+            style={{ background: aiSettings.soundFx ? '#58cc02' : '#cbd5e1' }}
+          >
+            <div className="switch-dot" style={{ left: aiSettings.soundFx ? '22px' : '4px' }} />
+          </div>
+        </div>
+
         <div style={{ marginTop: 8 }}>
           <div className="setting-label" style={{ marginBottom: 8 }}>
             题目语速
@@ -1149,6 +1279,29 @@ const SettingsPanel = memo(function SettingsPanel({ prefs, onPrefsChange, onClos
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="settings-section-title">AI 解析方式</div>
+
+        <div className="ai-mode-group">
+          <button
+            className={`ai-mode-btn ${aiMode === 'api' ? 'active' : ''}`}
+            onClick={() => updateAISetting('aiMode', 'api')}
+            type="button"
+          >
+            API 内嵌
+          </button>
+          <button
+            className={`ai-mode-btn ${aiMode === 'deepseek' ? 'active' : ''}`}
+            onClick={() => updateAISetting('aiMode', 'deepseek')}
+            type="button"
+          >
+            DeepSeek 网页
+          </button>
+        </div>
+
+        <div className="setting-desc" style={{ marginTop: 8 }}>
+          API 内嵌适合留在应用里直接讲题；DeepSeek 网页适合用油猴脚本、专家模式、网页上下文。
         </div>
       </div>
     </div>
@@ -1225,13 +1378,10 @@ export default function XuanZeTi({
 }) {
   const data = rawData?.content || rawData || {};
   const question = data.question || {};
-  const questionText = typeof question === 'string' ? question : question.text || '';
-  const questionImg = data.imageUrl || '';
-
-  const options = useMemo(
-    () => (Array.isArray(data.options) ? data.options : []),
-    [data.options]
-  );
+  const questionObj = typeof question === 'object' && question !== null ? question : {};
+  const questionText = typeof question === 'string' ? question : questionObj.text || '';
+  const questionImg = data.imageUrl || questionObj.imageUrl || questionObj.img || '';
+  const options = useMemo(() => (Array.isArray(data.options) ? data.options : []), [data.options]);
 
   const correctAnswers = useMemo(() => {
     const raw = data.correctAnswer || [];
@@ -1274,9 +1424,10 @@ export default function XuanZeTi({
   const [showSettings, setShowSettings] = useState(false);
   const [cardPopId, setCardPopId] = useState(null);
   const [questionImgVisible, setQuestionImgVisible] = useState(Boolean(questionImg));
+  const [showAIExplanation, setShowAIExplanation] = useState(false);
 
-  const [prefs, setPrefs] = useState(() => getMergedInteractivePrefs());
-  const [aiSettings] = useState(() => getSavedInteractiveAISettings());
+  const [prefs, setPrefs] = useState(() => getMergedPrefs());
+  const [aiSettings, setAISettings] = useState(() => getMergedAISettings());
 
   const audioControllerRef = useRef(new AudioPlaybackController());
   const mountedRef = useRef(false);
@@ -1284,10 +1435,12 @@ export default function XuanZeTi({
   const { addTimeout, clearTimeouts } = useTimeoutManager();
   const { openOverlay, closeOverlay, closeTopOverlay, resetOverlayStack } = useOverlayHistory();
 
-  const hasOverlayOpen = showSettings;
+  const hasOverlayOpen = showAIExplanation || showSettings;
+  const aiMode = aiSettings?.aiMode || 'api';
 
   useEffect(() => {
     mountedRef.current = true;
+
     return () => {
       mountedRef.current = false;
       audioControllerRef.current.stop();
@@ -1298,6 +1451,7 @@ export default function XuanZeTi({
 
   useEffect(() => {
     onOverlayChange?.(hasOverlayOpen);
+
     return () => {
       onOverlayChange?.(false);
     };
@@ -1343,19 +1497,19 @@ export default function XuanZeTi({
   }, []);
 
   const feedbackTap = useCallback(() => {
-    if (aiSettings?.vibration) vibrate(15);
-    if (aiSettings?.soundFx) playBeep('tap');
-  }, [aiSettings]);
+    if (aiSettings.vibration) vibrate(15);
+    if (aiSettings.soundFx) playBeep('tap');
+  }, [aiSettings.soundFx, aiSettings.vibration]);
 
   const feedbackCorrect = useCallback(() => {
-    if (aiSettings?.vibration) vibrate([30, 40, 30]);
-    if (aiSettings?.soundFx) playBeep('correct');
-  }, [aiSettings]);
+    if (aiSettings.vibration) vibrate([30, 40, 30]);
+    if (aiSettings.soundFx) playBeep('correct');
+  }, [aiSettings.soundFx, aiSettings.vibration]);
 
   const feedbackWrong = useCallback(() => {
-    if (aiSettings?.vibration) vibrate([40, 40, 40]);
-    if (aiSettings?.soundFx) playBeep('wrong');
-  }, [aiSettings]);
+    if (aiSettings.vibration) vibrate([50, 40, 60]);
+    if (aiSettings.soundFx) playBeep('wrong');
+  }, [aiSettings.soundFx, aiSettings.vibration]);
 
   const playQuestion = useCallback(() => {
     if (!questionText) return;
@@ -1394,6 +1548,7 @@ export default function XuanZeTi({
     setShowResultSheet(false);
     setShowSettings(false);
     setCardPopId(null);
+    setShowAIExplanation(false);
     resetOverlayStack();
 
     if (questionText && prefs.autoPlay) {
@@ -1422,18 +1577,23 @@ export default function XuanZeTi({
     closeOverlay('settings', setShowSettings);
   }, [closeOverlay]);
 
+  const closeAIExplanation = useCallback(() => {
+    closeOverlay('ai-explanation', setShowAIExplanation);
+  }, [closeOverlay]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
 
     const onPopState = () => {
       closeTopOverlay({
         settings: closeSettings,
+        'ai-explanation': closeAIExplanation,
       });
     };
 
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [closeSettings, closeTopOverlay]);
+  }, [closeAIExplanation, closeSettings, closeTopOverlay]);
 
   const toggleOption = useCallback(
     (optionId) => {
@@ -1450,6 +1610,7 @@ export default function XuanZeTi({
       }
 
       setCardPopId(optionId);
+
       addTimeout(() => {
         if (mountedRef.current) {
           setCardPopId((prev) => (prev === optionId ? null : prev));
@@ -1503,8 +1664,29 @@ export default function XuanZeTi({
   ]);
 
   const handleOpenSettings = useCallback(() => {
+    if (showAIExplanation) return;
     openOverlay('settings', setShowSettings);
-  }, [openOverlay]);
+  }, [openOverlay, showAIExplanation]);
+
+  const explanationPayload = useMemo(
+    () => ({
+      questionType: 'choice',
+      questionText,
+      questionImage: questionImg || '',
+      options: shuffledOptions.map((option) => ({
+        id: String(option.id),
+        text: option.text,
+        imageUrl: option.img || option.imageUrl || '',
+      })),
+      selectedIds: selectedIds.map(String),
+      correctAnswers: correctAnswers.map(String),
+      isRight,
+      extraContext: {
+        multiSelect: correctAnswers.length > 1,
+      },
+    }),
+    [correctAnswers, isRight, questionImg, questionText, selectedIds, shuffledOptions]
+  );
 
   const handleOpenDeepSeekWeb = useCallback(() => {
     stopAllAudio();
@@ -1524,7 +1706,7 @@ export default function XuanZeTi({
 
     const qText = [
       questionText || '',
-      questionImg ? `题目图片：${questionImg}` : '',
+      questionImg ? `图片：${questionImg}` : '',
       shuffledOptions.length
         ? `选项：${shuffledOptions
             .map((option) => `${String(option.id)}. ${option.text || ''}`)
@@ -1539,16 +1721,32 @@ export default function XuanZeTi({
 
     window.open(url, '_blank', 'noopener,noreferrer');
   }, [
-    stopAllAudio,
-    questionText,
-    questionImg,
-    shuffledOptions,
-    selectedIds,
     correctAnswers,
+    questionImg,
+    questionText,
+    selectedIds,
+    shuffledOptions,
+    stopAllAudio,
   ]);
 
+  const handleOpenAIExplanation = useCallback(() => {
+    stopAllAudio();
+    setShowSettings(false);
+
+    if (aiMode === 'deepseek') {
+      handleOpenDeepSeekWeb();
+      return;
+    }
+
+    openOverlay('ai-explanation', setShowAIExplanation);
+  }, [aiMode, handleOpenDeepSeekWeb, openOverlay, stopAllAudio]);
+
+  const updateAISettings = useCallback((patch) => {
+    setAISettings((prev) => ({ ...prev, ...patch }));
+  }, []);
+
   return (
-    <div className={`xzt-container ${hasOverlayOpen ? 'settings-open' : ''}`}>
+    <div className={`xzt-container ${hasOverlayOpen ? 'ai-open' : ''}`}>
       <style dangerouslySetInnerHTML={{ __html: cssStyles }} />
 
       <div className="xzt-header">
@@ -1664,8 +1862,8 @@ export default function XuanZeTi({
           {isRight ? '太棒了，也可以看看为什么对。' : '你已经很接近正确答案了。'}
         </div>
 
-        <button className="ai-btn" onClick={handleOpenDeepSeekWeb} type="button">
-          <FaRobot /> {isRight ? '为什么对？' : 'AI 解析'}
+        <button className="ai-btn" onClick={handleOpenAIExplanation} type="button">
+          <FaRobot /> {isRight ? '为什么对？' : aiMode === 'deepseek' ? 'DeepSeek 解析' : 'AI 解析'}
         </button>
 
         <button
@@ -1676,13 +1874,28 @@ export default function XuanZeTi({
           }}
           type="button"
         >
-          下一题 <FaArrowRight />
+          继续 <FaArrowRight />
         </button>
       </div>
 
       {showSettings ? (
-        <SettingsPanel prefs={prefs} onPrefsChange={setPrefs} onClose={closeSettings} />
+        <SettingsPanel
+          prefs={prefs}
+          aiSettings={aiSettings}
+          onPrefsChange={setPrefs}
+          onAISettingsChange={setAISettings}
+          onClose={closeSettings}
+        />
       ) : null}
+
+      <InteractiveAIExplanationPanel
+        open={showAIExplanation}
+        onClose={closeAIExplanation}
+        settings={aiSettings}
+        updateSettings={updateAISettings}
+        title="AI 讲题老师"
+        initialPayload={explanationPayload}
+      />
     </div>
   );
 }
