@@ -1,438 +1,902 @@
 // components/WordCard.js
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  memo,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useTransition, animated } from '@react-spring/web';
 import { useDrag } from '@use-gesture/react';
 import { Howl } from 'howler';
 import {
-    FaMicrophone, FaPenFancy, FaCog, FaTimes, FaRandom, FaSortAmountDown,
-    FaHeart, FaRegHeart, FaPlayCircle, FaStop, FaVolumeUp, FaRedo,
-    FaHome
+  FaMicrophone,
+  FaPenFancy,
+  FaCog,
+  FaTimes,
+  FaRandom,
+  FaSortAmountDown,
+  FaHeart,
+  FaRegHeart,
+  FaPlayCircle,
+  FaStop,
+  FaVolumeUp,
+  FaRedo,
+  FaHome,
+  FaChevronUp,
+  FaChevronDown,
 } from 'react-icons/fa';
 import { pinyin as pinyinConverter } from 'pinyin-pro';
 import HanziModal from '@/components/HanziModal';
 
-// --- 数据库和辅助函数 ---
+// =================================================================================
+// IndexedDB: favorites
+// =================================================================================
 const DB_NAME = 'ChineseLearningDB';
 const STORE_NAME = 'favoriteWords';
+const STYLE_ID = 'word-card-runtime-styles';
+const SETTINGS_KEY = 'learningWordCardSettings';
+const PROGRESS_PREFIX = 'word_progress_';
+
+const DEFAULT_SETTINGS = {
+  order: 'sequential',
+  autoPlayChinese: true,
+  autoPlayBurmese: true,
+  autoPlayExample: true,
+  autoBrowse: false,
+  autoBrowseDelay: 6000,
+  voiceChinese: 'zh-CN-XiaoyouNeural',
+  voiceBurmese: 'my-MM-NilarNeural',
+  speechRateChinese: -60,
+  speechRateBurmese: -60,
+  backgroundImage: '',
+};
+
+const TTS_VOICES = [
+  { value: 'zh-CN-XiaoxiaoNeural', label: 'တရုတ် (အမျိုးသမီး)' },
+  { value: 'zh-CN-XiaoyouNeural', label: 'တရုတ် (အမျိုးသမီး - ကလေး)' },
+  { value: 'my-MM-NilarNeural', label: 'ဗမာ (အမျိုးသမီး)' },
+  { value: 'my-MM-ThihaNeural', label: 'ဗမာ (အမျိုးသား)' },
+];
 
 function openDB() {
-    return new Promise((resolve, reject) => {
-        if (typeof window === 'undefined') return reject("Server side");
-        const request = indexedDB.open(DB_NAME, 1);
-        request.onerror = () => reject('Database Error');
-        request.onsuccess = () => resolve(request.result);
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-            }
-        };
-    });
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB is not available'));
+      return;
+    }
+
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onerror = () => reject(request.error || new Error('Database error'));
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+  });
+}
+
+function waitForTransaction(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error('Transaction error'));
+    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+  });
 }
 
 async function toggleFavorite(word) {
-    try {
-        const db = await openDB();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        const existing = await new Promise((resolve) => {
-            const getReq = store.get(word.id);
-            getReq.onsuccess = () => resolve(getReq.result);
-            getReq.onerror = () => resolve(null);
-        });
-        if (existing) {
-            store.delete(word.id);
-            return false;
-        } else {
-            const wordToStore = { ...word };
-            store.put(wordToStore);
-            return true;
-        }
-    } catch (e) { return false; }
+  if (!word?.id) return false;
+
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+
+    const existing = await new Promise((resolve) => {
+      const getReq = store.get(word.id);
+      getReq.onsuccess = () => resolve(getReq.result);
+      getReq.onerror = () => resolve(null);
+    });
+
+    if (existing) {
+      store.delete(word.id);
+      await waitForTransaction(tx);
+      db.close();
+      return false;
+    }
+
+    store.put({ ...word, favoritedAt: Date.now() });
+    await waitForTransaction(tx);
+    db.close();
+    return true;
+  } catch (error) {
+    console.warn('toggleFavorite failed:', error);
+    return false;
+  }
 }
 
 async function isFavorite(id) {
-    try {
-        const db = await openDB();
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        return new Promise((resolve) => {
-            const getReq = store.get(id);
-            getReq.onsuccess = () => resolve(!!getReq.result);
-            getReq.onerror = () => resolve(false);
-        });
-    } catch (e) { return false; }
+  if (!id) return false;
+
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+
+    const result = await new Promise((resolve) => {
+      const getReq = store.get(id);
+      getReq.onsuccess = () => resolve(!!getReq.result);
+      getReq.onerror = () => resolve(false);
+    });
+
+    db.close();
+    return result;
+  } catch (error) {
+    return false;
+  }
 }
 
-const TTS_VOICES = [
-    { value: 'zh-CN-XiaoxiaoNeural', label: 'တရုတ် (အမျိုးသမီး)' },
-    { value: 'zh-CN-XiaoyouNeural', label: 'တရုတ် (အမျိုးသမီး - ကလေး)' },
-    { value: 'my-MM-NilarNeural', label: 'ဗမာ (အမျိုးသမီး)' },
-    { value: 'my-MM-ThihaNeural', label: 'ဗမာ (အမျိုးသား)' },
-];
+// =================================================================================
+// Audio manager: one active audio source, safe cleanup, spell-read interruption token
+// =================================================================================
+let soundEffects = null;
+let activeHowl = null;
+let activeObjectUrl = null;
+let spellSequenceId = 0;
+let audioPlayId = 0;
 
-let sounds = null;
-let _howlInstance = null;
-let spellSequenceId = 0; // 全局序列号，用于打断逐字发音
+function revokeActiveObjectUrl() {
+  if (activeObjectUrl) {
+    URL.revokeObjectURL(activeObjectUrl);
+    activeObjectUrl = null;
+  }
+}
 
-const stopAllAudio = () => {
-    spellSequenceId++; // 取消任何正在进行的逐字发音序列
-    if (_howlInstance) {
-        _howlInstance.stop();
-        _howlInstance.unload();
-        _howlInstance = null;
+function unloadActiveHowl() {
+  if (activeHowl) {
+    try {
+      activeHowl.stop();
+      activeHowl.unload();
+    } catch (error) {
+      // Howler may throw when an audio node is already torn down on some mobile browsers.
     }
-    if (sounds) {
-        Object.values(sounds).forEach(s => s.stop());
-    }
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-    }
+    activeHowl = null;
+  }
+  revokeActiveObjectUrl();
+}
+
+const stopAllAudio = ({ cancelSpell = true, stopEffects = false } = {}) => {
+  audioPlayId += 1;
+  if (cancelSpell) spellSequenceId += 1;
+
+  unloadActiveHowl();
+
+  if (stopEffects && soundEffects) {
+    Object.values(soundEffects).forEach((sound) => sound.stop());
+  }
+
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
 };
 
 const initSounds = () => {
-    if (!sounds && typeof window !== 'undefined') {
-        sounds = {
-            switch: new Howl({ src: ['/sounds/switch-card.mp3'], volume: 0.5 }),
-        };
-    }
+  if (!soundEffects && typeof window !== 'undefined') {
+    soundEffects = {
+      switch: new Howl({ src: ['/sounds/switch-card.mp3'], volume: 0.45, html5: true }),
+    };
+  }
 };
 
-// TTS 播放逻辑
-const playTTS = async (text, voice, rate, onEndCallback, e) => {
-    if (e && e.stopPropagation) e.stopPropagation();
-    stopAllAudio();
+function normalizeSpeechRate(rate) {
+  const safeRate = Number.isFinite(Number(rate)) ? Number(rate) : -60;
+  if (safeRate >= 0) return Math.min(1.8, 1 + safeRate / 100);
+  return Math.max(0.55, 1 + safeRate / 200);
+}
 
-    if (!text || !voice) {
-        if (onEndCallback) onEndCallback();
-        return;
-    }
+function finishOnce(callback) {
+  let finished = false;
+  return () => {
+    if (finished) return;
+    finished = true;
+    if (typeof callback === 'function') callback();
+  };
+}
 
-    const apiUrl = 'https://libretts.is-an.org/api/tts';
-    const rateValue = Math.round(rate / 2);
+const playTTS = async (
+  text,
+  voice,
+  rate,
+  onEndCallback,
+  event,
+  { cancelSpell = true, stopBeforePlay = true } = {},
+) => {
+  if (event?.stopPropagation) event.stopPropagation();
 
-    try {
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, voice, rate: rateValue, pitch: 0 }),
-        });
+  const done = finishOnce(onEndCallback);
 
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
+  if (stopBeforePlay) {
+    stopAllAudio({ cancelSpell });
+  }
 
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
+  if (!text || !voice) {
+    done();
+    return;
+  }
 
-        _howlInstance = new Howl({
-            src: [audioUrl],
-            format: ['mpeg'],
-            html5: true,
-            onend: () => {
-                URL.revokeObjectURL(audioUrl);
-                if (onEndCallback) onEndCallback();
-            },
-            onloaderror: () => { URL.revokeObjectURL(audioUrl); if (onEndCallback) onEndCallback(); },
-            onplayerror: () => { URL.revokeObjectURL(audioUrl); if (onEndCallback) onEndCallback(); }
-        });
+  const currentPlayId = audioPlayId;
+  const apiUrl = 'https://libretts.is-an.org/api/tts';
+  const rateValue = Math.round((Number(rate) || 0) / 2);
 
-        _howlInstance.play();
-    } catch (error) {
-        console.warn("API TTS失败，回退到系统TTS:", error);
-        if (typeof window !== 'undefined' && window.speechSynthesis) {
-             const u = new SpeechSynthesisUtterance(text);
-             u.lang = voice.includes('my') ? 'my-MM' : 'zh-CN';
-             u.rate = rate >= 0 ? 1 + (rate / 100) : 1 + (rate / 200);
-             u.onend = () => { if(onEndCallback) onEndCallback(); };
-             u.onerror = () => { if(onEndCallback) onEndCallback(); };
-             window.speechSynthesis.speak(u);
-        } else {
-             if (onEndCallback) onEndCallback();
-        }
-    }
-};
-
-const playR2Audio = (word, onEndCallback, settings, defaultLevel) => {
-    const targetLevel = word.hsk_level || defaultLevel;
-    if (!word || !word.id || !targetLevel) {
-        const textToRead = word.audioText || word.chinese;
-        playTTS(textToRead, settings.voiceChinese, settings.speechRateChinese, onEndCallback);
-        return;
-    }
-
-    stopAllAudio();
-    const formattedId = String(word.id).padStart(4, '0');
-    const audioSrc = `https://audio.886.best/chinese-vocab-audio/hsk${targetLevel}/${formattedId}.mp3`;
-
-    _howlInstance = new Howl({
-        src: [audioSrc],
-        html5: true,
-        onend: () => { if (onEndCallback) onEndCallback(); },
-        onloaderror: () => {
-            const textToRead = word.audioText || word.chinese;
-            playTTS(textToRead, settings.voiceChinese, settings.speechRateChinese, onEndCallback);
-        },
-        onplayerror: () => { if (onEndCallback) onEndCallback(); }
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice, rate: rateValue, pitch: 0 }),
     });
 
-    _howlInstance.play();
+    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+
+    const audioBlob = await response.blob();
+    if (currentPlayId !== audioPlayId) {
+      done();
+      return;
+    }
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    activeObjectUrl = audioUrl;
+
+    activeHowl = new Howl({
+      src: [audioUrl],
+      format: ['mpeg', 'mp3'],
+      html5: true,
+      onend: () => {
+        revokeActiveObjectUrl();
+        done();
+      },
+      onloaderror: () => {
+        revokeActiveObjectUrl();
+        done();
+      },
+      onplayerror: () => {
+        revokeActiveObjectUrl();
+        done();
+      },
+    });
+
+    activeHowl.play();
+  } catch (error) {
+    console.warn('API TTS failed, falling back to system TTS:', error);
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voice.includes('my') ? 'my-MM' : 'zh-CN';
+      utterance.rate = normalizeSpeechRate(rate);
+      utterance.onend = done;
+      utterance.onerror = done;
+      window.speechSynthesis.speak(utterance);
+    } else {
+      done();
+    }
+  }
+};
+
+const playR2Audio = (
+  word,
+  onEndCallback,
+  settings,
+  defaultLevel,
+  { cancelSpell = true } = {},
+) => {
+  const done = finishOnce(onEndCallback);
+  const targetLevel = word?.hsk_level || defaultLevel;
+  const textToRead = word?.audioText || word?.chinese;
+
+  if (!word?.id || !targetLevel) {
+    playTTS(textToRead, settings.voiceChinese, settings.speechRateChinese, done, null, { cancelSpell });
+    return;
+  }
+
+  stopAllAudio({ cancelSpell });
+  const formattedId = String(word.id).padStart(4, '0');
+  const audioSrc = `https://audio.886.best/chinese-vocab-audio/hsk${targetLevel}/${formattedId}.mp3`;
+
+  activeHowl = new Howl({
+    src: [audioSrc],
+    html5: true,
+    onend: done,
+    onloaderror: () => {
+      playTTS(textToRead, settings.voiceChinese, settings.speechRateChinese, done, null, {
+        cancelSpell,
+      });
+    },
+    onplayerror: done,
+  });
+
+  activeHowl.play();
 };
 
 const playSoundEffect = (type) => {
-    if (typeof window === 'undefined') return;
-    initSounds();
-    stopAllAudio();
-    if (sounds && sounds[type]) sounds[type].play();
+  if (typeof window === 'undefined') return;
+  initSounds();
+  stopAllAudio({ cancelSpell: true, stopEffects: false });
+  soundEffects?.[type]?.play();
 };
 
-// --- Hook ---
+// =================================================================================
+// Small utilities
+// =================================================================================
+const safeLocalStorage = {
+  get(key) {
+    try {
+      if (typeof window === 'undefined') return null;
+      return localStorage.getItem(key);
+    } catch (error) {
+      return null;
+    }
+  },
+  set(key, value) {
+    try {
+      if (typeof window !== 'undefined') localStorage.setItem(key, value);
+    } catch (error) {
+      // Ignore private browsing / quota errors.
+    }
+  },
+};
+
+function shuffleArray(input) {
+  const arr = [...input];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function getWordId(word, index) {
+  return word?.id ?? `${word?.chinese || word?.word || 'word'}-${index}`;
+}
+
+function getPinyinText(text) {
+  if (!text) return '';
+  try {
+    return pinyinConverter(text, {
+      toneType: 'symbol',
+      separator: ' ',
+      v: true,
+    }).replace(/·/g, ' ');
+  } catch (error) {
+    return text;
+  }
+}
+
+function clamp(value, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return min;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function injectRuntimeStyles() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.innerHTML = `
+    @keyframes wordCardFadeIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes wordCardRipple {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    @keyframes wordCardWave {
+      0%, 100% { height: 8px; }
+      50% { height: 24px; }
+    }
+    .word-card-scroll::-webkit-scrollbar { width: 0; height: 0; }
+    @media (prefers-reduced-motion: reduce) {
+      .word-card-animated, .word-card-animated * {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function getRecorderMimeType() {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/mpeg'];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+// =================================================================================
+// Hook: settings
+// =================================================================================
 const useCardSettings = () => {
-    const [settings, setSettings] = useState(() => {
-        try {
-            if (typeof window === 'undefined') return {};
-            const savedSettings = localStorage.getItem('learningWordCardSettings');
-            const defaultSettings = {
-                order: 'sequential', autoPlayChinese: true, autoPlayBurmese: true, autoPlayExample: true, autoBrowse: false, autoBrowseDelay: 6000, voiceChinese: 'zh-CN-XiaoyouNeural', voiceBurmese: 'my-MM-NilarNeural', speechRateChinese: -60, speechRateBurmese: -60, backgroundImage: ''
-            };
-            return savedSettings ? { ...defaultSettings, ...JSON.parse(savedSettings) } : defaultSettings;
-        } catch (error) {
-            return { order: 'sequential', autoPlayChinese: true, autoPlayBurmese: true, autoPlayExample: true, autoBrowse: false, autoBrowseDelay: 6000, voiceChinese: 'zh-CN-XiaoyouNeural', voiceBurmese: 'my-MM-NilarNeural', speechRateChinese: -60, speechRateBurmese: -60, backgroundImage: '' };
+  const [settings, setSettings] = useState(() => {
+    const savedSettings = safeLocalStorage.get(SETTINGS_KEY);
+    if (!savedSettings) return DEFAULT_SETTINGS;
+
+    try {
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) };
+    } catch (error) {
+      return DEFAULT_SETTINGS;
+    }
+  });
+
+  useEffect(() => {
+    safeLocalStorage.set(SETTINGS_KEY, JSON.stringify(settings));
+  }, [settings]);
+
+  return [settings, setSettings];
+};
+
+// =================================================================================
+// Pronunciation comparison modal
+// =================================================================================
+const PronunciationComparison = memo(({ correctWord, pinyinText, settings, onClose }) => {
+  const [status, setStatus] = useState('idle');
+  const [userAudioUrl, setUserAudioUrl] = useState(null);
+  const [isPlayingType, setIsPlayingType] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const mediaRecorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+  const localAudioRef = useRef(null);
+  const userAudioUrlRef = useRef(null);
+  const isMountedRef = useRef(true);
+
+  const checkSupport = () =>
+    !!(typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined');
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (userAudioUrlRef.current) URL.revokeObjectURL(userAudioUrlRef.current);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      localAudioRef.current?.unload();
+      stopAllAudio();
+    };
+  }, []);
+
+  const startRecording = async () => {
+    stopAllAudio();
+    setErrorMessage('');
+
+    if (!checkSupport()) {
+      setErrorMessage('您的浏览器暂不支持录音功能，请换用 Chrome / Edge / Safari 新版本。');
+      return;
+    }
+
+    try {
+      if (userAudioUrlRef.current) {
+        URL.revokeObjectURL(userAudioUrlRef.current);
+        userAudioUrlRef.current = null;
+        setUserAudioUrl(null);
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      streamRef.current = stream;
+      chunksRef.current = [];
+
+      const mimeType = getRecorderMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size > 0) chunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        userAudioUrlRef.current = url;
+        stream.getTracks().forEach((track) => track.stop());
+
+        if (isMountedRef.current) {
+          setUserAudioUrl(url);
+          setStatus('review');
         }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setStatus('recording');
+    } catch (error) {
+      setErrorMessage('无法访问麦克风，请检查浏览器权限设置。');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const resetRecording = () => {
+    localAudioRef.current?.stop();
+    localAudioRef.current?.unload();
+    localAudioRef.current = null;
+
+    if (userAudioUrlRef.current) {
+      URL.revokeObjectURL(userAudioUrlRef.current);
+      userAudioUrlRef.current = null;
+    }
+
+    setUserAudioUrl(null);
+    setIsPlayingType(null);
+    setStatus('idle');
+    setErrorMessage('');
+  };
+
+  const playStandard = () => {
+    localAudioRef.current?.stop();
+    setIsPlayingType('standard');
+    playTTS(correctWord, settings.voiceChinese, settings.speechRateChinese, () => setIsPlayingType(null));
+  };
+
+  const playUser = () => {
+    if (!userAudioUrl) return;
+
+    stopAllAudio();
+    setIsPlayingType('user');
+    localAudioRef.current?.unload();
+    localAudioRef.current = new Howl({
+      src: [userAudioUrl],
+      html5: true,
+      onend: () => setIsPlayingType(null),
+      onloaderror: () => setIsPlayingType(null),
+      onplayerror: () => setIsPlayingType(null),
     });
-    useEffect(() => { try { if (typeof window !== 'undefined') localStorage.setItem('learningWordCardSettings', JSON.stringify(settings)); } catch (error) { } }, [settings]);
-    return [settings, setSettings];
-};
+    localAudioRef.current.play();
+  };
 
-// =================================================================================
-// 🔥 核心发音与录音对比组件
-// =================================================================================
-const PronunciationComparison = ({ correctWord, pinyinText, settings, onClose }) => {
-    const [status, setStatus] = useState('idle'); 
-    const [userAudioUrl, setUserAudioUrl] = useState(null); 
-    const [isPlayingType, setIsPlayingType] = useState(null); 
-    
-    const mediaRecorderRef = useRef(null); 
-    const streamRef = useRef(null); 
-    const localAudioRef = useRef(null);
-
-    const checkSupport = () => { 
-        return !!(typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia); 
-    };
-
-    useEffect(() => { 
-        return () => { 
-            if (userAudioUrl) URL.revokeObjectURL(userAudioUrl); 
-            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); 
-            if (localAudioRef.current) localAudioRef.current.unload(); 
-            stopAllAudio(); 
-        }; 
-    }, [userAudioUrl]);
-
-    const startRecording = async () => { 
-        stopAllAudio(); 
-        if (!checkSupport()) { alert("您的浏览器不支持录音功能"); return; } 
-        try { 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); 
-            streamRef.current = stream; 
-            const recorder = new MediaRecorder(stream); 
-            const chunks = []; 
-            recorder.ondataavailable = e => chunks.push(e.data); 
-            recorder.onstop = () => { 
-                const blob = new Blob(chunks, { type: 'audio/webm' }); 
-                const url = URL.createObjectURL(blob); 
-                setUserAudioUrl(url); 
-                setStatus('review'); 
-                stream.getTracks().forEach(track => track.stop()); 
-            }; 
-            mediaRecorderRef.current = recorder; 
-            recorder.start(); 
-            setStatus('recording'); 
-        } catch (err) { 
-            alert("无法访问麦克风，请检查权限设置"); 
-        } 
-    };
-
-    const stopRecording = () => { 
-        if (mediaRecorderRef.current) mediaRecorderRef.current.stop(); 
-    };
-
-    const resetRecording = () => { 
-        if (userAudioUrl) URL.revokeObjectURL(userAudioUrl); 
-        setUserAudioUrl(null); 
-        setIsPlayingType(null);
-        setStatus('idle'); 
-    };
-
-    const playStandard = () => { 
-        if (localAudioRef.current) localAudioRef.current.stop(); 
-        setIsPlayingType('standard');
-        playTTS(correctWord, settings.voiceChinese, settings.speechRateChinese, () => setIsPlayingType(null)); 
-    };
-
-    const playUser = () => { 
-        if (!userAudioUrl) return; 
-        stopAllAudio(); 
-        setIsPlayingType('user');
-        if (localAudioRef.current) localAudioRef.current.unload(); 
-        localAudioRef.current = new Howl({ 
-            src: [userAudioUrl], 
-            format: ['webm'], 
-            html5: true,
-            onend: () => setIsPlayingType(null)
-        }); 
-        localAudioRef.current.play(); 
-    };
-
-    return (
-        <div style={styles.comparisonOverlay} onClick={onClose}>
-            <div style={styles.comparisonPanel} onClick={e => e.stopPropagation()}>
-                <div style={styles.recordHeader}>
-                    <h3 style={{ margin: 0, color: '#374151', fontSize: '1.1rem' }}>发音跟读对比</h3>
-                    <button style={styles.closeButtonSimple} onClick={onClose}><FaTimes /></button>
-                </div>
-                
-                <div style={styles.recordContent}>
-                    <div style={styles.recordWordDisplay}>
-                        <div style={styles.compPinyin}>{pinyinText}</div>
-                        <div style={styles.compChinese}>{correctWord}</div>
-                    </div>
-                    
-                    <div style={styles.actionArea}>
-                        {status === 'idle' && (
-                            <div style={styles.idleStateContainer}>
-                                <button style={styles.bigRecordBtn} onClick={startRecording}>
-                                    <FaMicrophone size={32} />
-                                </button>
-                                <div style={styles.instructionText}>点击开始录音</div>
-                            </div>
-                        )}
-                        
-                        {status === 'recording' && (
-                            <div style={styles.idleStateContainer}>
-                                <div style={styles.waveformContainer}>
-                                    <div style={styles.waveBar}></div><div style={{...styles.waveBar, animationDelay: '0.2s'}}></div>
-                                    <div style={{...styles.waveBar, animationDelay: '0.4s'}}></div><div style={{...styles.waveBar, animationDelay: '0.1s'}}></div>
-                                </div>
-                                <button style={{...styles.bigRecordBtn, ...styles.recordingPulse, background: '#ef4444'}} onClick={stopRecording}>
-                                    <FaStop size={32} />
-                                </button>
-                                <div style={{...styles.instructionText, color: '#ef4444'}}>录音中...点击停止</div>
-                            </div>
-                        )}
-                        
-                        {status === 'review' && (
-                            <div style={styles.reviewContainer}>
-                                <div style={styles.reviewRow}>
-                                    <div style={{...styles.reviewCard, border: isPlayingType === 'standard' ? '2px solid #3b82f6' : '1px solid #e5e7eb'}} onClick={playStandard}>
-                                        <div style={{...styles.iconCircle, background: isPlayingType === 'standard' ? '#3b82f6' : '#f3f4f6', color: isPlayingType === 'standard' ? '#fff' : '#6b7280'}}>
-                                            <FaVolumeUp size={20} />
-                                        </div>
-                                        <span style={styles.reviewCardText}>标准发音</span>
-                                    </div>
-                                    
-                                    <div style={{...styles.reviewCard, border: isPlayingType === 'user' ? '2px solid #10b981' : '1px solid #e5e7eb'}} onClick={playUser}>
-                                        <div style={{...styles.iconCircle, background: isPlayingType === 'user' ? '#10b981' : '#f3f4f6', color: isPlayingType === 'user' ? '#fff' : '#6b7280'}}>
-                                            <FaPlayCircle size={20} />
-                                        </div>
-                                        <span style={styles.reviewCardText}>我的发音</span>
-                                    </div>
-                                </div>
-                                <button style={styles.retryLink} onClick={resetRecording}>
-                                    <FaRedo size={14} /> 重新录音
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
+  return (
+    <div style={styles.comparisonOverlay} onClick={onClose} role="presentation">
+      <div style={styles.comparisonPanel} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+        <div style={styles.recordHeader}>
+          <h3 style={styles.recordTitle}>发音跟读对比</h3>
+          <button style={styles.closeButtonSimple} onClick={onClose} aria-label="关闭">
+            <FaTimes />
+          </button>
         </div>
-    );
-};
 
-// --- 设置和跳转面板 ---
-const SettingsPanel = React.memo(({ settings, setSettings, onClose }) => {
-    const handleSettingChange = (key, value) => { setSettings(prev => ({...prev, [key]: value})); };
-    const handleImageUpload = (e) => { const file = e.target.files[0]; if (file && file.type.startsWith('image/')) { const reader = new FileReader(); reader.onload = (loadEvent) => { handleSettingChange('backgroundImage', loadEvent.target.result); }; reader.readAsDataURL(file); } };
-    return (
-        <div style={styles.settingsModal} onClick={onClose}>
-            <div style={styles.settingsContent} onClick={(e) => e.stopPropagation()}>
-                <button style={styles.closeButton} onClick={onClose}><FaTimes /></button>
-                <h2 style={{marginTop: 0, color: '#374151'}}>Settings</h2>
-                <div style={styles.settingGroup}><label style={styles.settingLabel}>Order</label><div style={styles.settingControl}><button onClick={() => handleSettingChange('order', 'sequential')} style={{...styles.settingButton, background: settings.order === 'sequential' ? '#4299e1' : '#f3f4f6', color: settings.order === 'sequential' ? 'white' : '#4b5563' }}><FaSortAmountDown/> Sequential</button><button onClick={() => handleSettingChange('order', 'random')} style={{...styles.settingButton, background: settings.order === 'random' ? '#4299e1' : '#f3f4f6', color: settings.order === 'random' ? 'white' : '#4b5563' }}><FaRandom/> Random</button></div></div>
-                <div style={styles.settingGroup}><label style={styles.settingLabel}>Auto Play</label><div style={styles.settingControl}><label><input type="checkbox" checked={settings.autoPlayChinese} onChange={(e) => handleSettingChange('autoPlayChinese', e.target.checked)} /> Chinese</label></div><div style={styles.settingControl}><label><input type="checkbox" checked={settings.autoPlayBurmese} onChange={(e) => handleSettingChange('autoPlayBurmese', e.target.checked)} /> Burmese</label></div><div style={styles.settingControl}><label><input type="checkbox" checked={settings.autoPlayExample} onChange={(e) => handleSettingChange('autoPlayExample', e.target.checked)} /> Example</label></div></div>
-                <div style={styles.settingGroup}><label style={styles.settingLabel}>Background</label><div style={styles.settingControl}><input type="file" accept="image/*" id="bg-upload" style={{ display: 'none' }} onChange={handleImageUpload} /><button style={styles.settingButton} onClick={() => document.getElementById('bg-upload').click()}>Upload</button><button style={{...styles.settingButton, flex: '0 1 auto'}} onClick={() => handleSettingChange('backgroundImage', '')}>Reset</button></div></div>
-                <div style={styles.settingGroup}><label style={styles.settingLabel}>Chinese Voice</label><select style={styles.settingSelect} value={settings.voiceChinese} onChange={(e) => handleSettingChange('voiceChinese', e.target.value)}>{TTS_VOICES.filter(v => v.value.startsWith('zh')).map(v => <option key={v.value} value={v.value}>{v.label}</option>)}</select></div>
-            </div>
+        <div style={styles.recordContent}>
+          <div style={styles.recordWordDisplay}>
+            <div style={styles.compPinyin}>{pinyinText}</div>
+            <div style={styles.compChinese}>{correctWord}</div>
+          </div>
+
+          <div style={styles.actionArea}>
+            {status === 'idle' && (
+              <div style={styles.idleStateContainer}>
+                <button style={styles.bigRecordBtn} onClick={startRecording} aria-label="开始录音">
+                  <FaMicrophone size={32} />
+                </button>
+                <div style={styles.instructionText}>点击开始录音</div>
+                {errorMessage && <div style={styles.errorText}>{errorMessage}</div>}
+              </div>
+            )}
+
+            {status === 'recording' && (
+              <div style={styles.idleStateContainer}>
+                <div style={styles.waveformContainer} aria-hidden="true">
+                  <div style={styles.waveBar} />
+                  <div style={{ ...styles.waveBar, animationDelay: '0.2s' }} />
+                  <div style={{ ...styles.waveBar, animationDelay: '0.4s' }} />
+                  <div style={{ ...styles.waveBar, animationDelay: '0.1s' }} />
+                </div>
+                <button
+                  style={{ ...styles.bigRecordBtn, ...styles.recordingPulse, background: '#ef4444' }}
+                  onClick={stopRecording}
+                  aria-label="停止录音"
+                >
+                  <FaStop size={32} />
+                </button>
+                <div style={{ ...styles.instructionText, color: '#ef4444' }}>录音中...点击停止</div>
+              </div>
+            )}
+
+            {status === 'review' && (
+              <div style={styles.reviewContainer}>
+                <div style={styles.reviewRow}>
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.reviewCard,
+                      border: isPlayingType === 'standard' ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                    }}
+                    onClick={playStandard}
+                  >
+                    <div
+                      style={{
+                        ...styles.iconCircle,
+                        background: isPlayingType === 'standard' ? '#3b82f6' : '#f3f4f6',
+                        color: isPlayingType === 'standard' ? '#fff' : '#6b7280',
+                      }}
+                    >
+                      <FaVolumeUp size={20} />
+                    </div>
+                    <span style={styles.reviewCardText}>标准发音</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.reviewCard,
+                      border: isPlayingType === 'user' ? '2px solid #10b981' : '1px solid #e5e7eb',
+                    }}
+                    onClick={playUser}
+                  >
+                    <div
+                      style={{
+                        ...styles.iconCircle,
+                        background: isPlayingType === 'user' ? '#10b981' : '#f3f4f6',
+                        color: isPlayingType === 'user' ? '#fff' : '#6b7280',
+                      }}
+                    >
+                      <FaPlayCircle size={20} />
+                    </div>
+                    <span style={styles.reviewCardText}>我的发音</span>
+                  </button>
+                </div>
+                <button type="button" style={styles.retryLink} onClick={resetRecording}>
+                  <FaRedo size={14} /> 重新录音
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-    );
+      </div>
+    </div>
+  );
 });
 
-const JumpModal = ({ max, current, onJump, onClose }) => {
-    const [inputValue, setInputValue] = useState(current + 1);
-    const inputRef = useRef(null);
-    useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
-    const handleJump = () => { const num = parseInt(inputValue, 10); if (num >= 1 && num <= max) { onJump(num - 1); } };
-    const handleKeyDown = (e) => { if (e.key === 'Enter') handleJump(); };
-    return ( <div style={styles.jumpModalOverlay} onClick={onClose}><div style={styles.jumpModalContent} onClick={e => e.stopPropagation()}><h3 style={styles.jumpModalTitle}>Go to</h3><input ref={inputRef} type="number" style={styles.jumpModalInput} value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} /><button style={styles.jumpModalButton} onClick={handleJump}>Go</button></div></div> );
-};
+PronunciationComparison.displayName = 'PronunciationComparison';
 
 // =================================================================================
-// ===== 主组件: WordCard ==========================================================
+// Settings modal
+// =================================================================================
+const Toggle = memo(({ checked, onChange, label }) => (
+  <label style={styles.switchLabel}>
+    <span>{label}</span>
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(event) => onChange(event.target.checked)}
+      style={styles.hiddenCheckbox}
+    />
+    <span style={{ ...styles.switchTrack, background: checked ? '#3b82f6' : '#d1d5db' }}>
+      <span style={{ ...styles.switchThumb, transform: checked ? 'translateX(22px)' : 'translateX(0)' }} />
+    </span>
+  </label>
+));
+
+Toggle.displayName = 'Toggle';
+
+const SettingsPanel = memo(({ settings, setSettings, onClose }) => {
+  const fileInputRef = useRef(null);
+
+  const handleSettingChange = useCallback(
+    (key, value) => {
+      setSettings((prev) => ({ ...prev, [key]: value }));
+    },
+    [setSettings],
+  );
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      handleSettingChange('backgroundImage', loadEvent.target.result || '');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div style={styles.settingsModal} onClick={onClose} role="presentation">
+      <div style={styles.settingsContent} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+        <button style={styles.closeButton} onClick={onClose} aria-label="关闭设置">
+          <FaTimes />
+        </button>
+
+        <h2 style={styles.settingsTitle}>Settings</h2>
+
+        <div style={styles.settingGroup}>
+          <label style={styles.settingLabel}>Order</label>
+          <div style={styles.segmentControl}>
+            <button
+              type="button"
+              onClick={() => handleSettingChange('order', 'sequential')}
+              style={{
+                ...styles.segmentButton,
+                ...(settings.order === 'sequential' ? styles.segmentButtonActive : {}),
+              }}
+            >
+              <FaSortAmountDown /> Sequential
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSettingChange('order', 'random')}
+              style={{
+                ...styles.segmentButton,
+                ...(settings.order === 'random' ? styles.segmentButtonActive : {}),
+              }}
+            >
+              <FaRandom /> Random
+            </button>
+          </div>
+        </div>
+
+        <div style={styles.settingGroup}>
+          <label style={styles.settingLabel}>Auto Play</label>
+          <div style={styles.settingStack}>
+            <Toggle checked={settings.autoPlayChinese} onChange={(value) => handleSettingChange('autoPlayChinese', value)} label="Chinese" />
+            <Toggle checked={settings.autoPlayBurmese} onChange={(value) => handleSettingChange('autoPlayBurmese', value)} label="Burmese" />
+            <Toggle checked={settings.autoPlayExample} onChange={(value) => handleSettingChange('autoPlayExample', value)} label="Example" />
+            <Toggle checked={settings.autoBrowse} onChange={(value) => handleSettingChange('autoBrowse', value)} label="Auto Browse" />
+          </div>
+          <div style={styles.rangeRow}>
+            <span>Browse Delay</span>
+            <input
+              type="range"
+              min="2500"
+              max="15000"
+              step="500"
+              value={settings.autoBrowseDelay}
+              onChange={(event) => handleSettingChange('autoBrowseDelay', Number(event.target.value))}
+            />
+            <strong>{Math.round(settings.autoBrowseDelay / 1000)}s</strong>
+          </div>
+        </div>
+
+        <div style={styles.settingGroup}>
+          <label style={styles.settingLabel}>Background</label>
+          <div style={styles.settingControl}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleImageUpload}
+            />
+            <button style={styles.settingButton} onClick={() => fileInputRef.current?.click()} type="button">
+              Upload
+            </button>
+            <button
+              style={{ ...styles.settingButton, flex: '0 1 auto' }}
+              onClick={() => handleSettingChange('backgroundImage', '')}
+              type="button"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div style={styles.settingGroup}>
+          <label style={styles.settingLabel}>Chinese Voice</label>
+          <select
+            style={styles.settingSelect}
+            value={settings.voiceChinese}
+            onChange={(event) => handleSettingChange('voiceChinese', event.target.value)}
+          >
+            {TTS_VOICES.filter((voice) => voice.value.startsWith('zh')).map((voice) => (
+              <option key={voice.value} value={voice.value}>
+                {voice.label}
+              </option>
+            ))}
+          </select>
+          <div style={styles.rangeRow}>
+            <span>Speed</span>
+            <input
+              type="range"
+              min="-90"
+              max="60"
+              step="5"
+              value={settings.speechRateChinese}
+              onChange={(event) => handleSettingChange('speechRateChinese', Number(event.target.value))}
+            />
+            <strong>{settings.speechRateChinese}</strong>
+          </div>
+        </div>
+
+        <div style={styles.settingGroup}>
+          <label style={styles.settingLabel}>Burmese Voice</label>
+          <select
+            style={styles.settingSelect}
+            value={settings.voiceBurmese}
+            onChange={(event) => handleSettingChange('voiceBurmese', event.target.value)}
+          >
+            {TTS_VOICES.filter((voice) => voice.value.startsWith('my')).map((voice) => (
+              <option key={voice.value} value={voice.value}>
+                {voice.label}
+              </option>
+            ))}
+          </select>
+          <div style={styles.rangeRow}>
+            <span>Speed</span>
+            <input
+              type="range"
+              min="-90"
+              max="60"
+              step="5"
+              value={settings.speechRateBurmese}
+              onChange={(event) => handleSettingChange('speechRateBurmese', Number(event.target.value))}
+            />
+            <strong>{settings.speechRateBurmese}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+SettingsPanel.displayName = 'SettingsPanel';
+
+// =================================================================================
+// Jump modal
+// =================================================================================
+const JumpModal = memo(({ max, current, onJump, onClose }) => {
+  const [inputValue, setInputValue] = useState(current + 1);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => inputRef.current?.focus(), 80);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleJump = () => {
+    const num = parseInt(inputValue, 10);
+    if (num >= 1 && num <= max) onJump(num - 1);
+  };
+
+  return (
+    <div style={styles.jumpModalOverlay} onClick={onClose} role="presentation">
+      <div style={styles.jumpModalContent} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+        <h3 style={styles.jumpModalTitle}>Go to</h3>
+        <input
+          ref={inputRef}
+          type="number"
+          min="1"
+          max={max}
+          style={styles.jumpModalInput}
+          value={inputValue}
+          onChange={(event) => setInputValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') handleJump();
+            if (event.key === 'Escape') onClose();
+          }}
+        />
+        <button style={styles.jumpModalButton} onClick={handleJump} type="button">
+          Go
+        </button>
+      </div>
+    </div>
+  );
+});
+
+JumpModal.displayName = 'JumpModal';
+
+// =================================================================================
+// Main component
 // =================================================================================
 const WordCard = ({ words = [], isOpen, onClose, progressKey = 'default', level }) => {
   const [isMounted, setIsMounted] = useState(false);
-  useEffect(() => { setIsMounted(true); }, []);
-
   const [settings, setSettings] = useCardSettings();
-
-  const getPinyin = useCallback((wordObj) => {
-      if (wordObj.pinyin) return wordObj.pinyin;
-      if (!wordObj.chinese) return '';
-      try { return pinyinConverter(wordObj.chinese, { toneType: 'symbol', separator: ' ', v: true }).replace(/·/g, ' '); } catch (e) { return wordObj.chinese; }
-  }, []);
-
-  const processedCards = useMemo(() => {
-    try {
-        const mapped = words.map(w => ({
-            id: w.id,
-            hsk_level: w.hsk_level,
-            chinese: w.chinese || w.word,
-            audioText: w.audioText || w.chinese || w.word,
-            pinyin: w.pinyin,
-            burmese: w.burmese || w.meaning,
-            explanation: w.explanation,
-            mnemonic: w.mnemonic,
-            example: w.example,
-            example2: w.example2,
-        })).filter(w => w.chinese);
-
-        if (settings.order === 'random') {
-            for (let i = mapped.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [mapped[i], mapped[j]] = [mapped[j], mapped[i]]; }
-        }
-        return mapped;
-    } catch (error) { console.error("Data error:", error); return []; }
-  }, [words, settings.order]);
-
   const [activeCards, setActiveCards] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-
-  useEffect(() => {
-    const initialCards = processedCards.length > 0 ? processedCards : [{ id: 'fallback', chinese: "...", burmese: "..." }];
-    setActiveCards(initialCards);
-    if (typeof window !== 'undefined' && progressKey && processedCards.length > 0) {
-        const savedIndex = localStorage.getItem(`word_progress_${progressKey}`);
-        const parsed = parseInt(savedIndex, 10);
-        if (!isNaN(parsed) && parsed >= 0 && parsed < processedCards.length) { setCurrentIndex(parsed); } else { setCurrentIndex(0); }
-    } else { setCurrentIndex(0); }
-  }, [processedCards, progressKey]);
-
-  useEffect(() => {
-      if (typeof window !== 'undefined' && progressKey && activeCards.length > 0) {
-          localStorage.setItem(`word_progress_${progressKey}`, currentIndex);
-      }
-  }, [currentIndex, progressKey, activeCards.length]);
-
   const [isRevealed, setIsRevealed] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRecordingOpen, setIsRecordingOpen] = useState(false);
@@ -442,229 +906,507 @@ const WordCard = ({ words = [], isOpen, onClose, progressKey = 'default', level 
 
   const autoBrowseTimerRef = useRef(null);
   const lastDirection = useRef(0);
+  const hasOpenedRef = useRef(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    injectRuntimeStyles();
+  }, []);
+
+  const getPinyin = useCallback((wordObj) => {
+    if (wordObj?.pinyin) return wordObj.pinyin;
+    return getPinyinText(wordObj?.chinese);
+  }, []);
+
+  const processedCards = useMemo(() => {
+    const mapped = (Array.isArray(words) ? words : [])
+      .map((word, index) => ({
+        id: getWordId(word, index),
+        hsk_level: word.hsk_level,
+        chinese: word.chinese || word.word || '',
+        audioText: word.audioText || word.chinese || word.word || '',
+        pinyin: word.pinyin || '',
+        burmese: word.burmese || word.meaning || '',
+        explanation: word.explanation || '',
+        mnemonic: word.mnemonic || '',
+        example: word.example || '',
+        example2: word.example2 || '',
+      }))
+      .filter((word) => word.chinese);
+
+    return settings.order === 'random' ? shuffleArray(mapped) : mapped;
+  }, [words, settings.order]);
+
   const currentCard = activeCards.length > 0 ? activeCards[currentIndex] : null;
 
-  useEffect(() => {
-      let isActive = true;
-      if (currentCard?.id && currentCard.id !== 'fallback') {
-          isFavorite(currentCard.id).then(res => { if(isActive) setIsFavoriteCard(res); });
+  const handleClose = useCallback(() => {
+    stopAllAudio();
+    setIsSettingsOpen(false);
+    setIsRecordingOpen(false);
+    setIsJumping(false);
+    setWriterChar(null);
+    onClose?.();
+  }, [onClose]);
+
+  const navigate = useCallback(
+    (direction) => {
+      if (activeCards.length === 0) return;
+      lastDirection.current = direction;
+      setCurrentIndex((prev) => (prev + direction + activeCards.length) % activeCards.length);
+    },
+    [activeCards.length],
+  );
+
+  const handleJumpToCard = useCallback(
+    (index) => {
+      if (index >= 0 && index < activeCards.length) {
+        lastDirection.current = index > currentIndex ? 1 : -1;
+        setCurrentIndex(index);
       }
-      setIsRevealed(false);
-      return () => { isActive = false; };
-  }, [currentCard]);
-
-  const handleToggleFavorite = async (e) => {
-      if (e) { e.stopPropagation(); e.preventDefault(); }
-      if (!currentCard || currentCard.id === 'fallback') return;
-      const newStatus = !isFavoriteCard;
-      setIsFavoriteCard(newStatus);
-      const success = await toggleFavorite(currentCard);
-      if (success !== newStatus) setIsFavoriteCard(success);
-  };
-
-  const handleGoHome = (e) => {
-      e.stopPropagation();
-      window.location.href = 'https://886.best';
-  };
-
-  const navigate = useCallback((direction) => {
-    if (activeCards.length === 0) return;
-    lastDirection.current = direction;
-    setCurrentIndex(prev => (prev + direction + activeCards.length) % activeCards.length);
-  }, [activeCards.length]);
-
-  const handleJumpToCard = (index) => { if (index >= 0 && index < activeCards.length) { lastDirection.current = index > currentIndex ? 1 : -1; setCurrentIndex(index); } setIsJumping(false); };
+      setIsJumping(false);
+    },
+    [activeCards.length, currentIndex],
+  );
 
   useEffect(() => {
-    if (!isOpen || !currentCard) return;
+    if (!isOpen) {
+      hasOpenedRef.current = false;
+      stopAllAudio();
+      return;
+    }
+
+    const initialCards = processedCards.length > 0 ? processedCards : [];
+    setActiveCards(initialCards);
+
+    if (progressKey && initialCards.length > 0) {
+      const savedIndex = safeLocalStorage.get(`${PROGRESS_PREFIX}${progressKey}`);
+      const parsed = parseInt(savedIndex, 10);
+      setCurrentIndex(!Number.isNaN(parsed) && parsed >= 0 && parsed < initialCards.length ? parsed : 0);
+    } else {
+      setCurrentIndex(0);
+    }
+
+    hasOpenedRef.current = true;
+  }, [isOpen, processedCards, progressKey]);
+
+  useEffect(() => {
+    if (!isOpen || !progressKey || activeCards.length === 0) return;
+    safeLocalStorage.set(`${PROGRESS_PREFIX}${progressKey}`, String(currentIndex));
+  }, [currentIndex, progressKey, activeCards.length, isOpen]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (currentCard?.id && currentCard.id !== 'fallback') {
+      isFavorite(currentCard.id).then((result) => {
+        if (isActive) setIsFavoriteCard(result);
+      });
+    } else {
+      setIsFavoriteCard(false);
+    }
+
+    setIsRevealed(false);
+    return () => {
+      isActive = false;
+    };
+  }, [currentCard?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') handleClose();
+      if (event.key === 'ArrowUp') navigate(-1);
+      if (event.key === 'ArrowDown') navigate(1);
+      if (event.key === ' ') {
+        event.preventDefault();
+        setIsRevealed((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, handleClose, navigate]);
+
+  useEffect(() => {
+    if (!isOpen || !currentCard) return undefined;
+
     clearTimeout(autoBrowseTimerRef.current);
     stopAllAudio();
 
-    const startAutoBrowseTimer = () => { if (settings.autoBrowse) { autoBrowseTimerRef.current = setTimeout(() => { navigate(1); }, settings.autoBrowseDelay); } };
-
-    const playSequence = () => {
-        const playTtsChain = () => {
-            if (settings.autoPlayBurmese && currentCard.burmese && isRevealed) {
-                playTTS(currentCard.burmese, settings.voiceBurmese, settings.speechRateBurmese, () => {
-                    if (settings.autoPlayExample && currentCard.example && isRevealed) {
-                        playTTS(currentCard.example, settings.voiceChinese, settings.speechRateChinese, () => {
-                            if (settings.autoPlayExample && currentCard.example2 && isRevealed) {
-                                playTTS(currentCard.example2, settings.voiceChinese, settings.speechRateChinese, startAutoBrowseTimer);
-                            } else { startAutoBrowseTimer(); }
-                        });
-                    } else { startAutoBrowseTimer(); }
-                });
-            } else { startAutoBrowseTimer(); }
-        };
-
-        if (settings.autoPlayChinese && currentCard.chinese) {
-            playR2Audio(currentCard, playTtsChain, settings, level);
-        } else { playTtsChain(); }
+    const startAutoBrowseTimer = () => {
+      if (settings.autoBrowse && activeCards.length > 1) {
+        autoBrowseTimerRef.current = setTimeout(() => navigate(1), clamp(settings.autoBrowseDelay, 2500, 15000));
+      }
     };
 
-    const initialPlayTimer = setTimeout(playSequence, 600);
-    return () => { clearTimeout(initialPlayTimer); clearTimeout(autoBrowseTimerRef.current); };
-  }, [currentIndex, currentCard, settings, isOpen, navigate, isRevealed, level]);
-
-  const handleOpenRecorder = useCallback((e) => { if(e && e.stopPropagation) e.stopPropagation(); stopAllAudio(); setIsRecordingOpen(true); }, []);
-
-  // 🔥 新增：正确的逐字发音(拼读)逻辑，防止和TTS冲突
-  const handleSpellRead = async (e) => {
-      if (e && e.stopPropagation) e.stopPropagation();
-      stopAllAudio();
-      
-      const currentId = ++spellSequenceId; // 获取当前序列号
-      if (!currentCard || !currentCard.chinese) return;
-      
-      const chars = currentCard.chinese.split('');
-      
-      // 逐个字朗读
-      if (chars.length > 1) {
-          for (let i = 0; i < chars.length; i++) {
-              if (spellSequenceId !== currentId) return; // 如果被其他操作打断，立刻退出
-              
-              await new Promise(resolve => {
-                  playTTS(chars[i], settings.voiceChinese, settings.speechRateChinese, resolve);
+    const playSequence = () => {
+      const playAfterChinese = () => {
+        if (settings.autoPlayBurmese && currentCard.burmese && isRevealed) {
+          playTTS(currentCard.burmese, settings.voiceBurmese, settings.speechRateBurmese, () => {
+            if (settings.autoPlayExample && currentCard.example && isRevealed) {
+              playTTS(currentCard.example, settings.voiceChinese, settings.speechRateChinese, () => {
+                if (settings.autoPlayExample && currentCard.example2 && isRevealed) {
+                  playTTS(currentCard.example2, settings.voiceChinese, settings.speechRateChinese, startAutoBrowseTimer);
+                } else {
+                  startAutoBrowseTimer();
+                }
               });
-              
-              // 字与字之间稍微停顿
-              await new Promise(r => setTimeout(r, 400));
-          }
+            } else {
+              startAutoBrowseTimer();
+            }
+          });
+        } else {
+          startAutoBrowseTimer();
+        }
+      };
+
+      if (settings.autoPlayChinese && currentCard.chinese) {
+        playR2Audio(currentCard, playAfterChinese, settings, level);
+      } else {
+        playAfterChinese();
       }
-      
-      // 最后再完整连读一遍单词
-      if (spellSequenceId === currentId) {
-          playR2Audio(currentCard, null, settings, level);
+    };
+
+    const initialPlayTimer = setTimeout(playSequence, hasOpenedRef.current ? 450 : 700);
+    return () => {
+      clearTimeout(initialPlayTimer);
+      clearTimeout(autoBrowseTimerRef.current);
+    };
+  }, [
+    activeCards.length,
+    currentCard,
+    currentIndex,
+    isOpen,
+    isRevealed,
+    level,
+    navigate,
+    settings.autoBrowse,
+    settings.autoBrowseDelay,
+    settings.autoPlayBurmese,
+    settings.autoPlayChinese,
+    settings.autoPlayExample,
+    settings.speechRateBurmese,
+    settings.speechRateChinese,
+    settings.voiceBurmese,
+    settings.voiceChinese,
+  ]);
+
+  const handleToggleFavorite = async (event) => {
+    event?.stopPropagation?.();
+    event?.preventDefault?.();
+    if (!currentCard) return;
+
+    const optimisticStatus = !isFavoriteCard;
+    setIsFavoriteCard(optimisticStatus);
+    const finalStatus = await toggleFavorite(currentCard);
+    setIsFavoriteCard(finalStatus);
+  };
+
+  const handleGoHome = (event) => {
+    event?.stopPropagation?.();
+    stopAllAudio();
+    if (typeof window !== 'undefined') window.location.assign('https://886.best');
+  };
+
+  const handleOpenRecorder = useCallback((event) => {
+    event?.stopPropagation?.();
+    stopAllAudio();
+    setIsRecordingOpen(true);
+  }, []);
+
+  const handleSpellRead = async (event) => {
+    event?.stopPropagation?.();
+    stopAllAudio();
+
+    const currentSpellId = ++spellSequenceId;
+    if (!currentCard?.chinese) return;
+
+    const chars = [...currentCard.chinese].filter((char) => char.trim());
+
+    if (chars.length > 1) {
+      for (const char of chars) {
+        if (spellSequenceId !== currentSpellId) return;
+        await new Promise((resolve) => {
+          playTTS(char, settings.voiceChinese, settings.speechRateChinese, resolve, null, {
+            cancelSpell: false,
+          });
+        });
+        if (spellSequenceId !== currentSpellId) return;
+        await new Promise((resolve) => setTimeout(resolve, 350));
       }
+    }
+
+    if (spellSequenceId === currentSpellId) {
+      playR2Audio(currentCard, null, settings, level, { cancelSpell: false });
+    }
   };
 
   const handleKnow = () => {
     stopAllAudio();
     if (!currentCard) return;
-    const newActiveCards = activeCards.filter(card => card.id !== currentCard.id);
-    if (newActiveCards.length === 0) { setActiveCards([]); return; }
+
+    const newActiveCards = activeCards.filter((card) => card.id !== currentCard.id);
     setActiveCards(newActiveCards);
-    if (currentIndex >= newActiveCards.length) { setCurrentIndex(0); }
+
+    if (newActiveCards.length === 0) {
+      setCurrentIndex(0);
+      return;
+    }
+
+    setCurrentIndex((prev) => (prev >= newActiveCards.length ? 0 : prev));
   };
 
-  const handleDontKnow = () => { stopAllAudio(); if (isRevealed) { navigate(1); } else { setIsRevealed(true); } };
+  const handleDontKnow = () => {
+    stopAllAudio();
+    if (isRevealed) navigate(1);
+    else setIsRevealed(true);
+  };
 
-  const pageTransitions = useTransition(isOpen, { from: { opacity: 0, transform: 'translateY(100%)' }, enter: { opacity: 1, transform: 'translateY(0%)' }, leave: { opacity: 0, transform: 'translateY(100%)' }, config: { tension: 220, friction: 25 }, });
-  const cardTransitions = useTransition(currentIndex, { key: currentCard ? currentCard.id : currentIndex, from: { opacity: 0, transform: `translateY(${lastDirection.current > 0 ? '100%' : '-100%'})` }, enter: { opacity: 1, transform: 'translateY(0%)' }, leave: { opacity: 0, transform: `translateY(${lastDirection.current > 0 ? '-100%' : '100%'})`, position: 'absolute' }, config: { mass: 1, tension: 280, friction: 30 }, onStart: () => { if(currentCard) playSoundEffect('switch'); }, });
+  const handleManualPlay = (cardData, event) => {
+    event?.stopPropagation?.();
+    playR2Audio(cardData, null, settings, level);
+  };
 
-  const bind = useDrag(({ down, movement: [mx, my], velocity: { magnitude: vel }, direction: [xDir, yDir], event }) => {
-      if (event.target.closest('[data-no-gesture]')) return;
+  const handleToggleReveal = () => {
+    if (!isSettingsOpen && !isRecordingOpen && !isJumping && !writerChar) {
+      setIsRevealed((prev) => !prev);
+    }
+  };
+
+  const pageTransitions = useTransition(isOpen, {
+    from: { opacity: 0, transform: 'translateY(100%)' },
+    enter: { opacity: 1, transform: 'translateY(0%)' },
+    leave: { opacity: 0, transform: 'translateY(100%)' },
+    config: { tension: 220, friction: 25 },
+  });
+
+  const cardTransitions = useTransition(currentIndex, {
+    key: currentCard ? currentCard.id : currentIndex,
+    from: {
+      opacity: 0,
+      transform: `translateY(${lastDirection.current > 0 ? '100%' : '-100%'}) scale(0.98)`,
+    },
+    enter: { opacity: 1, transform: 'translateY(0%) scale(1)' },
+    leave: {
+      opacity: 0,
+      transform: `translateY(${lastDirection.current > 0 ? '-100%' : '100%'}) scale(0.98)`,
+      position: 'absolute',
+    },
+    config: { mass: 1, tension: 280, friction: 30 },
+    onStart: () => {
+      if (currentCard && activeCards.length > 1) playSoundEffect('switch');
+    },
+  });
+
+  const bind = useDrag(
+    ({ down, movement: [mx, my], velocity: [vx, vy], direction: [, yDir], event }) => {
+      if (event.target?.closest?.('[data-no-gesture]')) return;
       if (down) return;
+
       event.stopPropagation();
       const isHorizontal = Math.abs(mx) > Math.abs(my);
-      if (isHorizontal) { if (Math.abs(mx) > 80 || (vel > 0.5 && Math.abs(mx) > 40)) onClose(); }
-      else { if (Math.abs(my) > 60 || (vel > 0.4 && Math.abs(my) > 30)) navigate(yDir < 0 ? 1 : -1); }
-  }, { filterTaps: true, preventDefault: true, threshold: 10 });
+      const horizontalVelocity = Math.abs(vx);
+      const verticalVelocity = Math.abs(vy);
+
+      if (isHorizontal) {
+        if (Math.abs(mx) > 90 || (horizontalVelocity > 0.45 && Math.abs(mx) > 45)) handleClose();
+        return;
+      }
+
+      if (Math.abs(my) > 64 || (verticalVelocity > 0.35 && Math.abs(my) > 34)) {
+        navigate(yDir < 0 ? 1 : -1);
+      }
+    },
+    { filterTaps: true, preventDefault: true, threshold: 10 },
+  );
 
   const cardContent = pageTransitions((style, item) => {
-    const bgUrl = settings.backgroundImage;
-    const backgroundStyle = bgUrl ? { background: `url(${bgUrl}) center/cover no-repeat` } : {};
-    return item && (
-      <animated.div style={{ ...styles.fullScreen, ...backgroundStyle, ...style }}>
-        <div style={styles.gestureArea} {...bind()} onClick={() => setIsRevealed(prev => !prev)} />
+    if (!item) return null;
+
+    const backgroundStyle = settings.backgroundImage
+      ? { background: `linear-gradient(rgba(240,244,248,0.54), rgba(240,244,248,0.72)), url(${settings.backgroundImage}) center/cover no-repeat` }
+      : {};
+
+    return (
+      <animated.div style={{ ...styles.fullScreen, ...backgroundStyle, ...style }} className="word-card-animated">
+        <div style={styles.gestureArea} {...bind()} onClick={handleToggleReveal} aria-hidden="true" />
+
         {writerChar && <HanziModal word={writerChar} onClose={() => setWriterChar(null)} />}
         {isSettingsOpen && <SettingsPanel settings={settings} setSettings={setSettings} onClose={() => setIsSettingsOpen(false)} />}
-        
-        {/* 跟读对比界面 */}
         {isRecordingOpen && currentCard && (
-            <PronunciationComparison 
-                correctWord={currentCard.chinese} 
-                pinyinText={getPinyin(currentCard)}
-                settings={settings} 
-                onClose={() => setIsRecordingOpen(false)} 
-            />
+          <PronunciationComparison
+            correctWord={currentCard.chinese}
+            pinyinText={getPinyin(currentCard)}
+            settings={settings}
+            onClose={() => setIsRecordingOpen(false)}
+          />
+        )}
+        {isJumping && (
+          <JumpModal
+            max={activeCards.length}
+            current={currentIndex}
+            onJump={handleJumpToCard}
+            onClose={() => setIsJumping(false)}
+          />
         )}
 
-        {isJumping && <JumpModal max={activeCards.length} current={currentIndex} onJump={handleJumpToCard} onClose={() => setIsJumping(false)} />}
-
         {activeCards.length > 0 && currentCard ? (
-            cardTransitions((cardStyle, i) => {
-              const cardData = activeCards[i];
-              if (!cardData) return null;
+          cardTransitions((cardStyle, index) => {
+            const cardData = activeCards[index];
+            if (!cardData) return null;
 
-              return (
-                <animated.div key={cardData.id} style={{ ...styles.animatedCardShell, ...cardStyle }}>
-                  <div style={styles.cardContainer}>
-                      <div style={{ textAlign: 'center', width: '100%' }}>
-                          <div style={{ cursor: 'pointer' }} onClick={(e) => {
-                                e.stopPropagation();
-                                playR2Audio(cardData, null, settings, level);
-                            }}>
-                            <div style={styles.pinyin}>{getPinyin(cardData)}</div>
-                            <div style={styles.textWordChinese}>{cardData.chinese}</div>
-                          </div>
+            return (
+              <animated.div key={cardData.id} style={{ ...styles.animatedCardShell, ...cardStyle }}>
+                <div style={styles.cardContainer} className="word-card-scroll" data-no-gesture="true">
+                  <div style={styles.cardInner}>
+                    <button
+                      type="button"
+                      style={styles.wordButton}
+                      onClick={(event) => handleManualPlay(cardData, event)}
+                      aria-label="播放中文发音"
+                    >
+                      <div style={styles.pinyin}>{getPinyin(cardData)}</div>
+                      <div style={styles.textWordChinese}>{cardData.chinese}</div>
+                    </button>
 
-                          {isRevealed && (
-                              <animated.div style={styles.revealedContent}>
-                                  {cardData.burmese &&
-                                    <div style={styles.definitionBox} onClick={(e) => playTTS(cardData.burmese, settings.voiceBurmese, settings.speechRateBurmese, null, e)}>
-                                        <div style={styles.textWordBurmese}>{cardData.burmese}</div>
-                                    </div>
-                                  }
-                                  {cardData.explanation &&
-                                    <div style={styles.explanationBox} onClick={(e) => playTTS(cardData.explanation, settings.voiceBurmese, settings.speechRateBurmese, null, e)}>
-                                        <div style={styles.explanationText}>{cardData.explanation}</div>
-                                    </div>
-                                  }
-                                  {cardData.mnemonic && <div style={styles.mnemonicBox}>{cardData.mnemonic}</div>}
-                                  {cardData.example && (
-                                      <div style={styles.exampleBox} onClick={(e) => playTTS(cardData.example, settings.voiceChinese, settings.speechRateChinese, null, e)}>
-                                          <div style={{ flex: 1, textAlign: 'center' }}>
-                                            <div style={styles.examplePinyin}>{pinyinConverter(cardData.example, { toneType: 'symbol', separator: ' ' }).replace(/·/g, ' ')}</div>
-                                            <div style={styles.exampleText}>{cardData.example}</div>
-                                          </div>
-                                      </div>
-                                  )}
-                                  {cardData.example2 && (
-                                      <div style={styles.exampleBox} onClick={(e) => playTTS(cardData.example2, settings.voiceChinese, settings.speechRateChinese, null, e)}>
-                                          <div style={{ flex: 1, textAlign: 'center' }}>
-                                            <div style={styles.examplePinyin}>{pinyinConverter(cardData.example2, { toneType: 'symbol', separator: ' ' }).replace(/·/g, ' ')}</div>
-                                            <div style={styles.exampleText}>{cardData.example2}</div>
-                                          </div>
-                                      </div>
-                                  )}
-                              </animated.div>
-                          )}
-                      </div>
+                    {isRevealed && (
+                      <animated.div style={styles.revealedContent}>
+                        {cardData.burmese && (
+                          <button
+                            type="button"
+                            style={styles.definitionBox}
+                            onClick={(event) =>
+                              playTTS(
+                                cardData.burmese,
+                                settings.voiceBurmese,
+                                settings.speechRateBurmese,
+                                null,
+                                event,
+                              )
+                            }
+                          >
+                            <div style={styles.textWordBurmese}>{cardData.burmese}</div>
+                          </button>
+                        )}
+
+                        {cardData.explanation && (
+                          <button
+                            type="button"
+                            style={styles.explanationBox}
+                            onClick={(event) =>
+                              playTTS(
+                                cardData.explanation,
+                                settings.voiceBurmese,
+                                settings.speechRateBurmese,
+                                null,
+                                event,
+                              )
+                            }
+                          >
+                            <div style={styles.explanationText}>{cardData.explanation}</div>
+                          </button>
+                        )}
+
+                        {cardData.mnemonic && <div style={styles.mnemonicBox}>{cardData.mnemonic}</div>}
+
+                        {cardData.example && (
+                          <button
+                            type="button"
+                            style={styles.exampleBox}
+                            onClick={(event) =>
+                              playTTS(cardData.example, settings.voiceChinese, settings.speechRateChinese, null, event)
+                            }
+                          >
+                            <div style={styles.examplePinyin}>{getPinyinText(cardData.example)}</div>
+                            <div style={styles.exampleText}>{cardData.example}</div>
+                          </button>
+                        )}
+
+                        {cardData.example2 && (
+                          <button
+                            type="button"
+                            style={styles.exampleBox}
+                            onClick={(event) =>
+                              playTTS(cardData.example2, settings.voiceChinese, settings.speechRateChinese, null, event)
+                            }
+                          >
+                            <div style={styles.examplePinyin}>{getPinyinText(cardData.example2)}</div>
+                            <div style={styles.exampleText}>{cardData.example2}</div>
+                          </button>
+                        )}
+                      </animated.div>
+                    )}
                   </div>
-                </animated.div>
-              );
-            })
+                </div>
+              </animated.div>
+            );
+          })
         ) : (
-            <div style={styles.completionContainer}><h2>🎉 ဂုဏ်ယူပါတယ်!</h2><p>သင် ဒီသင်ခန်းစာကို လေ့လာပြီးသွားပါပြီ။</p><button style={{...styles.knowButton, ...styles.knowButtonBase}} onClick={onClose}>ပိတ်မည်</button></div>
+          <div style={styles.completionContainer} data-no-gesture="true">
+            <h2 style={styles.completionTitle}>🎉 ဂုဏ်ယူပါတယ်!</h2>
+            <p style={styles.completionText}>သင် ဒီသင်ခန်းစာကို လေ့လာပြီးသွားပါပြီ။</p>
+            <button style={{ ...styles.knowButton, ...styles.knowButtonBase }} onClick={handleClose} type="button">
+              ပိတ်မည်
+            </button>
+          </div>
         )}
 
         {currentCard && (
-            <div style={styles.rightControls} data-no-gesture="true">
-                <button style={styles.rightIconButton} onPointerDown={(e) => e.stopPropagation()} onClick={handleGoHome} title="Home Page">
-                    <FaHome size={18} color={'#4b5563'} />
-                </button>
-                <button style={styles.rightIconButton} onClick={() => setIsSettingsOpen(true)} title="ဆက်တင်များ"><FaCog size={18} /></button>
-                
-                {/* 🔥 拼读（逐字发音）按钮恢复，并修复了调用逻辑 */}
-                <button style={styles.rightIconButton} onClick={handleSpellRead} title="逐字拼读"><FaVolumeUp size={18} color={'#4b5563'} /></button>
-                
-                {/* 录音跟读 */}
-                <button style={styles.rightIconButton} onClick={handleOpenRecorder} title="အသံထွက်လေ့ကျင့်ရန်"><FaMicrophone size={18} color={'#4b5563'} /></button>
-                
-                {currentCard.chinese && currentCard.chinese.length > 0 && currentCard.chinese.length <= 5 && !currentCard.chinese.includes(' ') && ( <button style={styles.rightIconButton} onClick={() => setWriterChar(currentCard.chinese)} title="ရေးနည်း"><FaPenFancy size={18} /></button>)}
-                <button style={styles.rightIconButton} onPointerDown={(e) => e.stopPropagation()} onClick={handleToggleFavorite} title={isFavoriteCard ? "ပယ်ဖျက်" : "သိမ်းဆည်း"}>
-                    {isFavoriteCard ? <FaHeart size={18} color="#f87171" /> : <FaRegHeart size={18} />}
-                </button>
-            </div>
+          <div style={styles.rightControls} data-no-gesture="true">
+            <button style={styles.rightIconButton} onPointerDown={(event) => event.stopPropagation()} onClick={handleGoHome} title="Home Page" type="button">
+              <FaHome size={18} color="#4b5563" />
+            </button>
+            <button style={styles.rightIconButton} onClick={() => setIsSettingsOpen(true)} title="ဆက်တင်များ" type="button">
+              <FaCog size={18} />
+            </button>
+            <button style={styles.rightIconButton} onClick={handleSpellRead} title="逐字拼读" type="button">
+              <FaVolumeUp size={18} color="#4b5563" />
+            </button>
+            <button style={styles.rightIconButton} onClick={handleOpenRecorder} title="အသံထွက်လေ့ကျင့်ရန်" type="button">
+              <FaMicrophone size={18} color="#4b5563" />
+            </button>
+            {currentCard.chinese?.length > 0 && currentCard.chinese.length <= 5 && !currentCard.chinese.includes(' ') && (
+              <button style={styles.rightIconButton} onClick={() => setWriterChar(currentCard.chinese)} title="ရေးနည်း" type="button">
+                <FaPenFancy size={18} />
+              </button>
+            )}
+            <button
+              style={styles.rightIconButton}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={handleToggleFavorite}
+              title={isFavoriteCard ? 'ပယ်ဖျက်' : 'သိမ်းဆည်း'}
+              type="button"
+            >
+              {isFavoriteCard ? <FaHeart size={18} color="#f87171" /> : <FaRegHeart size={18} />}
+            </button>
+          </div>
         )}
 
+        <div style={styles.navHints} aria-hidden="true">
+          <FaChevronUp size={14} /> 上滑下一张 / 下滑上一张 <FaChevronDown size={14} />
+        </div>
+
         <div style={styles.bottomControlsContainer} data-no-gesture="true">
-            {activeCards.length > 0 && (<div style={styles.bottomCenterCounter} onClick={() => setIsJumping(true)}>{currentIndex + 1} / {activeCards.length}</div>)}
-            <div style={styles.knowButtonsWrapper}>
-                <button style={{...styles.knowButtonBase, ...styles.dontKnowButton}} onClick={handleDontKnow}>မသိဘူး</button>
-                <button style={{...styles.knowButtonBase, ...styles.knowButton}} onClick={handleKnow}>သိတယ်</button>
-            </div>
+          {activeCards.length > 0 && (
+            <button style={styles.bottomCenterCounter} onClick={() => setIsJumping(true)} type="button">
+              {currentIndex + 1} / {activeCards.length}
+            </button>
+          )}
+          <div style={styles.knowButtonsWrapper}>
+            <button style={{ ...styles.knowButtonBase, ...styles.dontKnowButton }} onClick={handleDontKnow} type="button">
+              မသိဘူး
+            </button>
+            <button style={{ ...styles.knowButtonBase, ...styles.knowButton }} onClick={handleKnow} type="button">
+              သိတယ်
+            </button>
+          </div>
         </div>
       </animated.div>
     );
@@ -674,88 +1416,600 @@ const WordCard = ({ words = [], isOpen, onClose, progressKey = 'default', level 
   return null;
 };
 
-// =================================================================
-// 样式定义区 (修复了拼音字体问题)
-// =================================================================
-const styles = {
-    fullScreen: { position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', touchAction: 'none', backgroundColor: '#f0f4f8' },
-    gestureArea: { position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1 },
-    animatedCardShell: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: '60px 15px 130px 15px' },
-    cardContainer: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'transparent', borderRadius: '24px', overflowY: 'auto', overflowX: 'hidden', padding: '40px 10px' },
-    
-    // 🔥 修复了拼音声调偏移：替换了不支持第一声调(Macron)的Roboto字体，使用了原生标准无衬线字体Arial/Helvetica
-    pinyin: { fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '1.4rem', color: '#d97706', textShadow: 'none', marginBottom: '0.8rem', letterSpacing: '0.05em', fontWeight: 'bold', lineHeight: '1.2' },
-    
-    textWordChinese: { fontSize: '2.4rem', fontWeight: 'bold', color: '#1f2937', lineHeight: 1.2, wordBreak: 'break-word', textShadow: 'none' },
-    revealedContent: { marginTop: '0.8rem', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' },
-    definitionBox: { cursor: 'pointer', textAlign: 'center' },
-    textWordBurmese: { fontSize: '1.3rem', color: '#4b5563', fontFamily: '"Padauk", "Myanmar Text", sans-serif', lineHeight: 1.5, wordBreak: 'break-word', textShadow: 'none' },
-    explanationBox: { color: '#16a34a', textAlign: 'center', fontSize: '1.1rem', textShadow: 'none', background: 'transparent', padding: '5px', maxWidth: '100%', cursor: 'pointer', border: 'none' },
-    explanationText: { fontFamily: '"Padauk", "Myanmar Text", sans-serif', lineHeight: 1.4, fontWeight: '500' },
-    mnemonicBox: { color: '#6b7280', display: 'inline-block', textAlign: 'center', fontSize: '1.0rem', textShadow: 'none', background: 'transparent', padding: '2px 0', maxWidth: '100%' },
-    exampleBox: { color: '#374151', width: '100%', maxWidth: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', textShadow: 'none', cursor: 'pointer', background: 'transparent', padding: '5px 0', borderRadius: '0', boxShadow: 'none', borderBottom: '1px dashed #e5e7eb' },
-    
-    // 🔥 例句拼音同理修复
-    examplePinyin: { fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '0.95rem', color: '#d97706', marginBottom: '0.2rem', opacity: 0.9, letterSpacing: '0.03em', fontWeight: 500, lineHeight: '1.2' },
-    
-    exampleText: { fontSize: '1.2rem', lineHeight: 1.4 },
-    rightControls: { position: 'fixed', bottom: '40%', right: '10px', zIndex: 101, display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', transform: 'translateY(50%)' },
-    rightIconButton: { background: 'white', border: '1px solid #e5e7eb', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '50%', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', transition: 'transform 0.2s', color: '#4b5563' },
-    bottomControlsContainer: { position: 'fixed', bottom: 0, left: 0, right: 0, padding: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' },
-    bottomCenterCounter: { background: 'rgba(0, 0, 0, 0.1)', color: '#374151', padding: '8px 18px', borderRadius: '20px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', userSelect: 'none' },
-    knowButtonsWrapper: { display: 'flex', width: '100%', maxWidth: '400px', gap: '15px' },
-    knowButtonBase: { flex: 1, padding: '16px', borderRadius: '16px', border: 'none', fontSize: '1.2rem', fontWeight: 'bold', color: 'white', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' },
-    dontKnowButton: { background: '#f59e0b', color: 'white' },
-    knowButton: { background: '#10b981', color: 'white' },
-    completionContainer: { textAlign: 'center', color: '#374151', textShadow: 'none', zIndex: 5, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' },
-    
-    // --- 录音跟读弹窗样式 ---
-    comparisonOverlay: { position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '20px' },
-    comparisonPanel: { width: '100%', maxWidth: '380px', background: 'white', borderRadius: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.3s ease-out', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' },
-    recordHeader: { padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-    closeButtonSimple: { background: 'white', border: '1px solid #e2e8f0', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b', fontSize: '1rem', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' },
-    recordContent: { padding: '30px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '30px', minHeight: '280px' },
-    recordWordDisplay: { textAlign: 'center', width: '100%' },
-    compPinyin: { fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '1.2rem', color: '#8b5cf6', fontWeight: 'bold', letterSpacing: '2px', marginBottom: '8px' },
-    compChinese: { fontSize: '3rem', fontWeight: '900', color: '#0f172a', lineHeight: 1.1 },
-    actionArea: { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 },
-    idleStateContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' },
-    bigRecordBtn: { width: '88px', height: '88px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 10px 25px rgba(59, 130, 246, 0.4)', transition: 'transform 0.2s', padding: 0 },
-    instructionText: { color: '#64748b', fontSize: '1rem', fontWeight: 600, letterSpacing: '1px' },
-    waveformContainer: { display: 'flex', gap: '4px', alignItems: 'center', height: '24px', marginBottom: '-10px' },
-    waveBar: { width: '4px', height: '100%', background: '#ef4444', borderRadius: '2px', animation: 'wave 1s ease-in-out infinite' },
-    recordingPulse: { background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 0 0 0 rgba(239, 68, 68, 0.7)', animation: 'ripple 1.5s infinite' },
-    
-    reviewContainer: { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' },
-    reviewRow: { display: 'flex', justifyContent: 'center', width: '100%', gap: '16px' },
-    reviewCard: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '20px 10px', background: '#f8fafc', borderRadius: '20px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' },
-    iconCircle: { width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' },
-    reviewCardText: { fontSize: '0.9rem', fontWeight: 'bold', color: '#475569' },
-    retryLink: { background: 'white', border: '1px solid #e2e8f0', color: '#64748b', padding: '10px 24px', borderRadius: '99px', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', transition: 'background 0.2s' },
-
-    settingsModal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10001, backdropFilter: 'blur(5px)', padding: '15px' },
-    settingsContent: { background: 'white', padding: '25px', borderRadius: '15px', width: '100%', maxWidth: '450px', boxShadow: '0 10px 30px rgba(0,0,0,0.2)', maxHeight: '80vh', overflowY: 'auto', position: 'relative' },
-    closeButton: { position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#aaa', lineHeight: 1 },
-    settingGroup: { marginBottom: '20px' },
-    settingLabel: { display: 'block', fontWeight: 'bold', marginBottom: '8px', color: '#333' },
-    settingControl: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' },
-    settingButton: { background: '#f3f4f6', color: '#4b5563', border: 'none', padding: '10px 14px', borderRadius: 14, cursor: 'pointer', fontWeight: 600, display: 'flex', gap: 8, alignItems: 'center', flex: 1, justifyContent: 'center', minWidth: '100px' },
-    settingSelect: { width: '100%', padding: '8px', borderRadius: '5px', border: '1px solid #ccc' },
-    jumpModalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10002 },
-    jumpModalContent: { background: 'white', padding: '25px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' },
-    jumpModalTitle: { marginTop: 0, marginBottom: '15px', color: '#333' },
-    jumpModalInput: { width: '100px', padding: '10px', fontSize: '1.2rem', textAlign: 'center', border: '2px solid #ccc', borderRadius: '8px', marginBottom: '15px' },
-    jumpModalButton: { width: '100%', padding: '12px', borderRadius: '10px', border: 'none', background: '#4299e1', color: 'white', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer' },
+// =================================================================================
+// Styles
+// =================================================================================
+const baseButtonReset = {
+  appearance: 'none',
+  border: 'none',
+  fontFamily: 'inherit',
 };
 
-if (typeof document !== 'undefined') {
-    const style = document.createElement('style');
-    style.innerHTML = `
-        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-        @keyframes ripple { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
-        @keyframes wave { 0%, 100% { height: 8px; } 50% { height: 24px; } }
-    `;
-    document.head.appendChild(style);
-}
+const styles = {
+  fullScreen: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 1000,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    touchAction: 'none',
+    backgroundColor: '#f0f4f8',
+    userSelect: 'none',
+  },
+  gestureArea: {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    zIndex: 0,
+  },
+  animatedCardShell: {
+    position: 'absolute',
+    inset: 0,
+    zIndex: 2,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+    padding: '64px 15px 138px 15px',
+    pointerEvents: 'none',
+  },
+  cardContainer: {
+    width: '100%',
+    maxWidth: 520,
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    background: 'rgba(255, 255, 255, 0.34)',
+    border: '1px solid rgba(255, 255, 255, 0.58)',
+    borderRadius: 28,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    padding: '34px 14px',
+    boxShadow: '0 24px 80px rgba(15, 23, 42, 0.10)',
+    backdropFilter: 'blur(12px)',
+    pointerEvents: 'auto',
+  },
+  cardInner: {
+    textAlign: 'center',
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  wordButton: {
+    ...baseButtonReset,
+    background: 'transparent',
+    cursor: 'pointer',
+    padding: '8px 12px',
+    width: '100%',
+    color: 'inherit',
+    touchAction: 'manipulation',
+  },
+  pinyin: {
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontSize: 'clamp(1.15rem, 4vw, 1.45rem)',
+    color: '#d97706',
+    textShadow: 'none',
+    marginBottom: '0.8rem',
+    letterSpacing: '0.05em',
+    fontWeight: 800,
+    lineHeight: 1.25,
+  },
+  textWordChinese: {
+    fontSize: 'clamp(2.55rem, 13vw, 5.4rem)',
+    fontWeight: 900,
+    color: '#111827',
+    lineHeight: 1.05,
+    wordBreak: 'break-word',
+    textShadow: '0 8px 34px rgba(17, 24, 39, 0.08)',
+  },
+  revealedContent: {
+    marginTop: '0.8rem',
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
+  definitionBox: {
+    ...baseButtonReset,
+    cursor: 'pointer',
+    textAlign: 'center',
+    background: 'rgba(255,255,255,0.4)',
+    borderRadius: 18,
+    padding: '8px 14px',
+    color: 'inherit',
+    maxWidth: '100%',
+  },
+  textWordBurmese: {
+    fontSize: 'clamp(1.2rem, 4vw, 1.55rem)',
+    color: '#374151',
+    fontFamily: '"Padauk", "Myanmar Text", sans-serif',
+    lineHeight: 1.55,
+    wordBreak: 'break-word',
+    textShadow: 'none',
+  },
+  explanationBox: {
+    ...baseButtonReset,
+    color: '#16a34a',
+    textAlign: 'center',
+    fontSize: '1.08rem',
+    textShadow: 'none',
+    background: 'transparent',
+    padding: 6,
+    maxWidth: '100%',
+    cursor: 'pointer',
+  },
+  explanationText: {
+    fontFamily: '"Padauk", "Myanmar Text", sans-serif',
+    lineHeight: 1.45,
+    fontWeight: 600,
+  },
+  mnemonicBox: {
+    color: '#6b7280',
+    display: 'inline-block',
+    textAlign: 'center',
+    fontSize: '1rem',
+    textShadow: 'none',
+    background: 'rgba(255,255,255,0.32)',
+    padding: '6px 12px',
+    borderRadius: 14,
+    maxWidth: '100%',
+    lineHeight: 1.45,
+  },
+  exampleBox: {
+    ...baseButtonReset,
+    color: '#374151',
+    width: '100%',
+    maxWidth: 430,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    textShadow: 'none',
+    cursor: 'pointer',
+    background: 'rgba(255,255,255,0.38)',
+    padding: '10px 12px',
+    borderRadius: 18,
+    border: '1px solid rgba(229,231,235,0.9)',
+    boxShadow: '0 8px 22px rgba(15, 23, 42, 0.05)',
+  },
+  examplePinyin: {
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontSize: '0.95rem',
+    color: '#d97706',
+    opacity: 0.92,
+    letterSpacing: '0.03em',
+    fontWeight: 600,
+    lineHeight: 1.25,
+  },
+  exampleText: {
+    fontSize: '1.18rem',
+    lineHeight: 1.4,
+  },
+  rightControls: {
+    position: 'fixed',
+    bottom: '40%',
+    right: 10,
+    zIndex: 1010,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    alignItems: 'center',
+    transform: 'translateY(50%)',
+  },
+  rightIconButton: {
+    ...baseButtonReset,
+    background: 'rgba(255,255,255,0.92)',
+    border: '1px solid #e5e7eb',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 42,
+    height: 42,
+    borderRadius: '50%',
+    boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)',
+    transition: 'transform 0.2s, box-shadow 0.2s',
+    color: '#4b5563',
+    touchAction: 'manipulation',
+  },
+  navHints: {
+    position: 'fixed',
+    top: 14,
+    left: '50%',
+    zIndex: 1005,
+    transform: 'translateX(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    color: 'rgba(75, 85, 99, 0.72)',
+    fontSize: '0.78rem',
+    fontWeight: 700,
+    background: 'rgba(255,255,255,0.5)',
+    border: '1px solid rgba(229,231,235,0.75)',
+    borderRadius: 999,
+    padding: '7px 12px',
+    backdropFilter: 'blur(8px)',
+  },
+  bottomControlsContainer: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: '15px 15px max(15px, env(safe-area-inset-bottom))',
+    zIndex: 1010,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 14,
+    pointerEvents: 'auto',
+  },
+  bottomCenterCounter: {
+    ...baseButtonReset,
+    background: 'rgba(255, 255, 255, 0.72)',
+    color: '#374151',
+    padding: '8px 18px',
+    borderRadius: 20,
+    fontSize: '1rem',
+    fontWeight: 800,
+    cursor: 'pointer',
+    userSelect: 'none',
+    boxShadow: '0 8px 18px rgba(15, 23, 42, 0.08)',
+  },
+  knowButtonsWrapper: {
+    display: 'flex',
+    width: '100%',
+    maxWidth: 430,
+    gap: 14,
+  },
+  knowButtonBase: {
+    ...baseButtonReset,
+    flex: 1,
+    padding: '16px',
+    borderRadius: 18,
+    fontSize: '1.2rem',
+    fontWeight: 900,
+    color: 'white',
+    cursor: 'pointer',
+    boxShadow: '0 12px 26px rgba(15, 23, 42, 0.14)',
+    touchAction: 'manipulation',
+  },
+  dontKnowButton: { background: '#f59e0b' },
+  knowButton: { background: '#10b981' },
+  completionContainer: {
+    textAlign: 'center',
+    color: '#374151',
+    textShadow: 'none',
+    zIndex: 5,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    padding: 24,
+  },
+  completionTitle: { margin: 0, fontSize: '1.9rem' },
+  completionText: { fontSize: '1.1rem', marginBottom: 24 },
+
+  comparisonOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(15, 23, 42, 0.62)',
+    backdropFilter: 'blur(8px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10000,
+    padding: 20,
+  },
+  comparisonPanel: {
+    width: '100%',
+    maxWidth: 390,
+    background: 'white',
+    borderRadius: 24,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    animation: 'wordCardFadeIn 0.3s ease-out',
+    boxShadow: '0 24px 48px rgba(0,0,0,0.22)',
+  },
+  recordHeader: {
+    padding: '16px 24px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    background: '#f8fafc',
+    borderBottom: '1px solid #e2e8f0',
+  },
+  recordTitle: {
+    margin: 0,
+    color: '#374151',
+    fontSize: '1.1rem',
+  },
+  closeButtonSimple: {
+    ...baseButtonReset,
+    background: 'white',
+    border: '1px solid #e2e8f0',
+    borderRadius: '50%',
+    width: 32,
+    height: 32,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    color: '#64748b',
+    fontSize: '1rem',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+  },
+  recordContent: {
+    padding: '30px 24px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 28,
+    minHeight: 292,
+  },
+  recordWordDisplay: { textAlign: 'center', width: '100%' },
+  compPinyin: {
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontSize: '1.2rem',
+    color: '#8b5cf6',
+    fontWeight: 800,
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  compChinese: { fontSize: '3rem', fontWeight: 900, color: '#0f172a', lineHeight: 1.1 },
+  actionArea: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  idleStateContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 },
+  bigRecordBtn: {
+    ...baseButtonReset,
+    width: 88,
+    height: 88,
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    boxShadow: '0 10px 25px rgba(59, 130, 246, 0.4)',
+    transition: 'transform 0.2s',
+    padding: 0,
+  },
+  instructionText: { color: '#64748b', fontSize: '1rem', fontWeight: 700, letterSpacing: 1 },
+  errorText: { color: '#dc2626', fontSize: '0.86rem', textAlign: 'center', lineHeight: 1.45, maxWidth: 280 },
+  waveformContainer: { display: 'flex', gap: 4, alignItems: 'center', height: 24, marginBottom: -10 },
+  waveBar: {
+    width: 4,
+    height: '100%',
+    background: '#ef4444',
+    borderRadius: 2,
+    animation: 'wordCardWave 1s ease-in-out infinite',
+  },
+  recordingPulse: {
+    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+    boxShadow: '0 0 0 0 rgba(239, 68, 68, 0.7)',
+    animation: 'wordCardRipple 1.5s infinite',
+  },
+  reviewContainer: { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 },
+  reviewRow: { display: 'flex', justifyContent: 'center', width: '100%', gap: 16 },
+  reviewCard: {
+    ...baseButtonReset,
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 12,
+    padding: '20px 10px',
+    background: '#f8fafc',
+    borderRadius: 20,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
+  },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s',
+  },
+  reviewCardText: { fontSize: '0.9rem', fontWeight: 800, color: '#475569' },
+  retryLink: {
+    ...baseButtonReset,
+    background: 'white',
+    border: '1px solid #e2e8f0',
+    color: '#64748b',
+    padding: '10px 24px',
+    borderRadius: 99,
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+    transition: 'background 0.2s',
+  },
+
+  settingsModal: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.6)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10001,
+    backdropFilter: 'blur(5px)',
+    padding: 15,
+  },
+  settingsContent: {
+    background: 'white',
+    padding: 24,
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 470,
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+    maxHeight: '84vh',
+    overflowY: 'auto',
+    position: 'relative',
+  },
+  closeButton: {
+    ...baseButtonReset,
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    background: 'none',
+    fontSize: '1.2rem',
+    cursor: 'pointer',
+    color: '#9ca3af',
+    lineHeight: 1,
+  },
+  settingsTitle: { marginTop: 0, color: '#374151' },
+  settingGroup: { marginBottom: 22 },
+  settingLabel: { display: 'block', fontWeight: 800, marginBottom: 10, color: '#333' },
+  settingControl: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+  settingButton: {
+    ...baseButtonReset,
+    background: '#f3f4f6',
+    color: '#4b5563',
+    padding: '10px 14px',
+    borderRadius: 14,
+    cursor: 'pointer',
+    fontWeight: 700,
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    minWidth: 100,
+  },
+  settingSelect: {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: 12,
+    border: '1px solid #d1d5db',
+    background: '#fff',
+    color: '#374151',
+  },
+  segmentControl: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 8,
+    padding: 4,
+    background: '#f3f4f6',
+    borderRadius: 16,
+  },
+  segmentButton: {
+    ...baseButtonReset,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: '10px 12px',
+    borderRadius: 12,
+    background: 'transparent',
+    color: '#4b5563',
+    cursor: 'pointer',
+    fontWeight: 800,
+  },
+  segmentButtonActive: {
+    background: '#3b82f6',
+    color: 'white',
+    boxShadow: '0 8px 18px rgba(59, 130, 246, 0.22)',
+  },
+  settingStack: { display: 'flex', flexDirection: 'column', gap: 10 },
+  switchLabel: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    color: '#4b5563',
+    fontWeight: 700,
+  },
+  hiddenCheckbox: { display: 'none' },
+  switchTrack: {
+    width: 48,
+    height: 26,
+    borderRadius: 999,
+    padding: 2,
+    transition: 'background 0.2s',
+    display: 'inline-flex',
+    alignItems: 'center',
+  },
+  switchThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: '50%',
+    background: '#fff',
+    display: 'block',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+    transition: 'transform 0.2s',
+  },
+  rangeRow: {
+    display: 'grid',
+    gridTemplateColumns: '96px 1fr 42px',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    color: '#4b5563',
+    fontSize: '0.9rem',
+  },
+  jumpModalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.6)',
+    backdropFilter: 'blur(5px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10002,
+    padding: 20,
+  },
+  jumpModalContent: {
+    background: 'white',
+    padding: 25,
+    borderRadius: 18,
+    textAlign: 'center',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+  },
+  jumpModalTitle: { marginTop: 0, marginBottom: 15, color: '#333' },
+  jumpModalInput: {
+    width: 110,
+    padding: 10,
+    fontSize: '1.2rem',
+    textAlign: 'center',
+    border: '2px solid #d1d5db',
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  jumpModalButton: {
+    ...baseButtonReset,
+    width: '100%',
+    padding: 12,
+    borderRadius: 12,
+    background: '#4299e1',
+    color: 'white',
+    fontSize: '1rem',
+    fontWeight: 800,
+    cursor: 'pointer',
+  },
+};
 
 export default WordCard;
