@@ -50,6 +50,24 @@ const DEFAULT_AI_SETTINGS = {
   myVoice: TTS_VOICES.my,
 };
 
+const CHOICE_QUESTION_SCHEMA_TEXT = `
+{
+  "id": "string",
+  "question": {
+    "text": "题干文字",
+    "imageUrl": "可选，没图就空字符串"
+  },
+  "options": [
+    { "id": "A", "text": "选项A", "imageUrl": "" },
+    { "id": "B", "text": "选项B", "imageUrl": "" },
+    { "id": "C", "text": "选项C", "imageUrl": "" },
+    { "id": "D", "text": "选项D", "imageUrl": "" }
+  ],
+  "correctAnswer": "A",
+  "explanation": "简短解析"
+}
+`;
+
 function getMergedPrefs() {
   return {
     ...DEFAULT_PREFS,
@@ -193,7 +211,6 @@ const cssStyles = `
   margin:0 1px;
 }
 
-/* 修复一声/带声调拼音上下偏移 */
 .zh-py {
   display:block;
   min-height:15px;
@@ -376,7 +393,6 @@ const cssStyles = `
   justify-content:center;
 }
 
-/* 修复整行拼音声调偏移 */
 .option-py {
   display:block;
   min-height:18px;
@@ -486,6 +502,12 @@ const cssStyles = `
   margin-bottom:8px;
 }
 
+.result-actions {
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+}
+
 .ai-btn {
   background:#fff;
   padding:13px;
@@ -499,11 +521,15 @@ const cssStyles = `
   justify-content:center;
   gap:8px;
   cursor:pointer;
-  margin-bottom:8px;
+  margin-bottom:0;
 }
 .ai-btn:active {
   transform:translateY(3px);
   border-bottom-width:2px;
+}
+.ai-btn.secondary {
+  color:#2563eb;
+  border-color:#bfdbfe;
 }
 
 .next-btn {
@@ -677,7 +703,7 @@ const indexedBlobCache = {
   initPromise: null,
 
   async init() {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === 'undefined' || typeof indexedDB === 'undefined') return null;
     if (this.db) return this.db;
     if (this.initPromise) return this.initPromise;
 
@@ -716,7 +742,7 @@ const indexedBlobCache = {
 
   async set(key, blob) {
     const db = await this.init();
-    if (!db) return;
+    if (!db || !blob) return;
 
     try {
       const tx = db.transaction('tts_audio', 'readwrite');
@@ -792,11 +818,11 @@ function playBeep(type = 'tap') {
   } catch (_) {}
 }
 
-const isChineseChar = (char = '') => /[\u4e00-\u9fff]/.test(char);
-const isMyanmarChar = (char = '') => /[\u1000-\u109F]/.test(char);
+const isChineseChar = (char = '') => /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(char);
+const isMyanmarChar = (char = '') => /[\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]/u.test(char);
 const isLatinOrDigit = (char = '') => /[a-zA-Z0-9]/.test(char);
 const isWhitespace = (char = '') => /\s/.test(char);
-const containsChinese = (text = '') => /[\u4e00-\u9fff]/.test(text);
+const containsChinese = (text = '') => /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(text);
 
 const isPunctuationOrSymbol = (char = '') =>
   !isChineseChar(char) &&
@@ -804,9 +830,15 @@ const isPunctuationOrSymbol = (char = '') =>
   !isLatinOrDigit(char) &&
   !isWhitespace(char);
 
+function normalizeTtsText(text = '') {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function detectWholeTextType(text = '') {
-  const hasZh = /[\u4e00-\u9fff]/.test(text);
-  const hasMy = /[\u1000-\u109F]/.test(text);
+  const hasZh = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(text);
+  const hasMy = /[\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]/u.test(text);
   const hasLatin = /[a-zA-Z0-9]/.test(text);
   const count = [hasZh, hasMy, hasLatin].filter(Boolean).length;
 
@@ -820,9 +852,12 @@ function detectWholeTextType(text = '') {
 }
 
 function splitMixedText(text = '') {
-  const wholeType = detectWholeTextType(text);
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+
+  const wholeType = detectWholeTextType(raw);
   if (wholeType !== 'mixed') {
-    return [{ text: String(text).trim(), lang: wholeType || 'zh' }];
+    return [{ text: raw, lang: wholeType || 'zh' }];
   }
 
   const segments = [];
@@ -838,7 +873,7 @@ function splitMixedText(text = '') {
     currentLang = null;
   };
 
-  for (const char of Array.from(text)) {
+  for (const char of Array.from(raw)) {
     let lang = null;
 
     if (isChineseChar(char)) lang = 'zh';
@@ -866,23 +901,101 @@ function splitMixedText(text = '') {
 
   pushCurrent();
 
-  return segments.length ? segments : [{ text: String(text).trim(), lang: 'zh' }];
+  return segments.length ? segments : [{ text: raw, lang: 'zh' }];
 }
 
-async function getTTSBlob(text, voice, rate = 0, apiUrl = 'https://t.leftsite.cn/tts') {
-  const cacheKey = `${apiUrl}-${voice}-${rate}-${text}`;
+function splitLongTextForTTS(text = '', maxLen = 90, hardMax = 150) {
+  const raw = normalizeTtsText(text);
+  if (!raw) return [];
+  if (Array.from(raw).length <= maxLen) return [raw];
+
+  const parts = raw.match(/[^。！？!?；;\n]+[。！？!?；;\n]*|[^\s]+/g) || [raw];
+  const chunks = [];
+  let buffer = '';
+
+  const pushBuffer = () => {
+    const value = normalizeTtsText(buffer);
+    if (value) chunks.push(value);
+    buffer = '';
+  };
+
+  const pushLongPart = (part) => {
+    const chars = Array.from(part);
+    for (let i = 0; i < chars.length; i += hardMax) {
+      const piece = chars.slice(i, i + hardMax).join('').trim();
+      if (piece) chunks.push(piece);
+    }
+  };
+
+  parts.forEach((part) => {
+    const next = buffer ? `${buffer}${part}` : part;
+
+    if (Array.from(next).length <= maxLen) {
+      buffer = next;
+      return;
+    }
+
+    pushBuffer();
+
+    if (Array.from(part).length > hardMax) {
+      pushLongPart(part);
+    } else {
+      buffer = part;
+    }
+  });
+
+  pushBuffer();
+  return chunks;
+}
+
+function buildTTSUnits(text = '') {
+  const segments = splitMixedText(text);
+  const units = [];
+
+  segments.forEach((segment) => {
+    splitLongTextForTTS(segment.text).forEach((chunk) => {
+      if (chunk) {
+        units.push({
+          text: chunk,
+          lang: segment.lang || 'zh',
+        });
+      }
+    });
+  });
+
+  return units;
+}
+
+async function getTTSBlob(
+  text,
+  voice,
+  rate = 0,
+  apiUrl = 'https://t.leftsite.cn/tts',
+  signal
+) {
+  const safeText = normalizeTtsText(text);
+  if (!safeText) throw new Error('Empty TTS text');
+
+  const cacheKey = `${apiUrl}-${voice}-${rate}-${safeText}`;
   let blob = await indexedBlobCache.get(cacheKey);
 
   if (!blob) {
-    const response = await fetch(
-      `${apiUrl}?t=${encodeURIComponent(text)}&v=${encodeURIComponent(voice)}&r=${rate}`
-    );
+    const url = `${apiUrl}?t=${encodeURIComponent(safeText)}&v=${encodeURIComponent(
+      voice
+    )}&r=${rate}`;
+
+    const response = await fetch(url, { signal });
 
     if (!response.ok) {
       throw new Error('TTS request failed');
     }
 
     blob = await response.blob();
+
+    if (!blob || blob.size <= 100) {
+      throw new Error('Empty TTS audio');
+    }
+
     await indexedBlobCache.set(cacheKey, blob);
   }
 
@@ -894,10 +1007,29 @@ class AudioPlaybackController {
     this.currentAudio = null;
     this.latestRequestId = 0;
     this.activeUrls = [];
+    this.prefetchMap = new Map();
+    this.abortController = null;
+    this.stopCurrentAudio = null;
   }
 
   stop() {
     this.latestRequestId += 1;
+
+    if (this.abortController) {
+      try {
+        this.abortController.abort();
+      } catch (_) {}
+
+      this.abortController = null;
+    }
+
+    if (this.stopCurrentAudio) {
+      try {
+        this.stopCurrentAudio();
+      } catch (_) {}
+
+      this.stopCurrentAudio = null;
+    }
 
     if (this.currentAudio) {
       try {
@@ -917,103 +1049,179 @@ class AudioPlaybackController {
     });
 
     this.activeUrls = [];
+    this.prefetchMap.clear();
+  }
+
+  getVoiceForLang(lang, aiSettings) {
+    if (lang === 'my') return aiSettings?.myVoice || TTS_VOICES.my;
+    if (lang === 'en') return TTS_VOICES.en;
+    return aiSettings?.zhVoice || TTS_VOICES.zh;
+  }
+
+  createObjectUrl(blob) {
+    const url = URL.createObjectURL(blob);
+    this.activeUrls.push(url);
+    return url;
+  }
+
+  revokeObjectUrl(url) {
+    try {
+      URL.revokeObjectURL(url);
+    } catch (_) {}
+
+    this.activeUrls = this.activeUrls.filter((item) => item !== url);
+  }
+
+  playUrl(url, requestId) {
+    return new Promise((resolve) => {
+      if (requestId !== this.latestRequestId) {
+        resolve();
+        return;
+      }
+
+      const audio = new Audio(url);
+      this.currentAudio = audio;
+
+      let finished = false;
+      let stopThisAudio = null;
+
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+
+        audio.onended = null;
+        audio.onerror = null;
+
+        if (this.currentAudio === audio) {
+          this.currentAudio = null;
+        }
+
+        if (this.stopCurrentAudio === stopThisAudio) {
+          this.stopCurrentAudio = null;
+        }
+
+        resolve();
+      };
+
+      stopThisAudio = () => {
+        try {
+          audio.pause();
+          audio.currentTime = 0;
+        } catch (_) {}
+
+        finish();
+      };
+
+      this.stopCurrentAudio = stopThisAudio;
+      audio.onended = finish;
+      audio.onerror = finish;
+      audio.play().catch(finish);
+    });
   }
 
   async playMixed(text, { rate = 0, aiSettings = null } = {}, onStart, onEnd) {
     this.stop();
 
-    const raw = String(text || '').trim();
+    const raw = normalizeTtsText(text);
     if (!raw) {
       onEnd?.();
       return;
     }
 
     const requestId = this.latestRequestId;
-    onStart?.();
+    const controller = new AbortController();
+    this.abortController = controller;
+
+    const units = buildTTSUnits(raw);
+    if (!units.length) {
+      onEnd?.();
+      return;
+    }
+
+    const apiUrl = aiSettings?.ttsApiUrl || DEFAULT_AI_SETTINGS.ttsApiUrl;
+
+    const prefetch = (index) => {
+      if (index < 0 || index >= units.length) return null;
+      if (this.prefetchMap.has(index)) return this.prefetchMap.get(index);
+
+      const unit = units[index];
+      const voice = this.getVoiceForLang(unit.lang, aiSettings);
+
+      const promise = getTTSBlob(unit.text, voice, rate, apiUrl, controller.signal)
+        .then((blob) => {
+          if (requestId !== this.latestRequestId) return null;
+          return this.createObjectUrl(blob);
+        })
+        .catch((error) => {
+          if (error?.name !== 'AbortError') {
+            console.warn('[TTS Prefetch Error]', error);
+          }
+
+          return null;
+        });
+
+      this.prefetchMap.set(index, promise);
+      return promise;
+    };
 
     try {
-      const segments = splitMixedText(raw);
-      const audios = [];
+      onStart?.();
 
-      for (const segment of segments) {
+      prefetch(0);
+      prefetch(1);
+
+      for (let i = 0; i < units.length; i += 1) {
         if (requestId !== this.latestRequestId) return;
 
-        const segmentText = String(segment.text || '').trim();
-        if (!segmentText) continue;
+        prefetch(i + 1);
+        prefetch(i + 2);
 
-        const voice =
-          segment.lang === 'my'
-            ? aiSettings?.myVoice || TTS_VOICES.my
-            : segment.lang === 'en'
-            ? TTS_VOICES.en
-            : aiSettings?.zhVoice || TTS_VOICES.zh;
-
-        const blob = await getTTSBlob(
-          segmentText,
-          voice,
-          rate,
-          aiSettings?.ttsApiUrl || DEFAULT_AI_SETTINGS.ttsApiUrl
-        );
+        const url = await prefetch(i);
 
         if (requestId !== this.latestRequestId) return;
+        if (!url) continue;
 
-        const url = URL.createObjectURL(blob);
-        this.activeUrls.push(url);
-        audios.push(new Audio(url));
+        await this.playUrl(url, requestId);
+        this.revokeObjectUrl(url);
       }
-
-      if (requestId !== this.latestRequestId) return;
-
-      if (!audios.length) {
-        onEnd?.();
-        return;
-      }
-
-      const playNext = (index) => {
-        if (requestId !== this.latestRequestId) return;
-
-        if (index >= audios.length) {
-          if (requestId === this.latestRequestId) {
-            this.currentAudio = null;
-            onEnd?.();
-          }
-          return;
-        }
-
-        const audio = audios[index];
-        this.currentAudio = audio;
-        audio.onended = () => playNext(index + 1);
-        audio.onerror = () => playNext(index + 1);
-        audio.play().catch(() => playNext(index + 1));
-      };
-
-      playNext(0);
     } catch (error) {
-      console.warn('[TTS Error]', error);
-
+      if (error?.name !== 'AbortError') {
+        console.warn('[TTS Error]', error);
+      }
+    } finally {
       if (requestId === this.latestRequestId) {
         this.currentAudio = null;
+        this.abortController = null;
+        this.stopCurrentAudio = null;
+        this.prefetchMap.clear();
         onEnd?.();
       }
     }
   }
 }
 
+const pinyinCache = new Map();
+const pinyinArrayCache = new Map();
+
 function getPinyinArraySafe(text = '') {
-  const cleaned = String(text).replace(/[^\u4e00-\u9fff]/g, '');
+  const cleaned = String(text).replace(/[^\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/gu, '');
   if (!cleaned) return [];
+  if (pinyinArrayCache.has(cleaned)) return pinyinArrayCache.get(cleaned);
+
+  let value = [];
 
   try {
-    return pinyin(cleaned, {
+    value = pinyin(cleaned, {
       type: 'array',
       toneType: 'symbol',
     });
   } catch (_) {
-    return [];
+    value = [];
   }
-}
 
-const pinyinCache = new Map();
+  pinyinArrayCache.set(cleaned, value);
+  return value;
+}
 
 function getCachedPinyin(text = '') {
   const key = String(text || '');
@@ -1023,7 +1231,7 @@ function getCachedPinyin(text = '') {
   let value = '';
 
   try {
-    value = pinyin(key.replace(/[^\u4e00-\u9fff]/g, ''), {
+    value = pinyin(key.replace(/[^\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/gu, ''), {
       toneType: 'symbol',
     });
   } catch (_) {
@@ -1038,10 +1246,10 @@ function renderTextWithOptionalPinyin(text, showPinyin, textClass = 'zh-char', p
   if (!text) return null;
 
   const parts =
-    String(text).match(/([\u4e00-\u9fff]+|[\u1000-\u109F]+|[^\u4e00-\u9fff\u1000-\u109F]+)/g) || [];
+    String(text).match(/([\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]+|[\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]+|[^\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]+)/gu) || [];
 
   return parts.map((part, partIndex) => {
-    if (/[\u4e00-\u9fff]/.test(part)) {
+    if (/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/u.test(part)) {
       const pinyinList = getPinyinArraySafe(part);
 
       return part.split('').map((char, charIndex) => (
@@ -1052,7 +1260,7 @@ function renderTextWithOptionalPinyin(text, showPinyin, textClass = 'zh-char', p
       ));
     }
 
-    if (/[\u1000-\u109F]/.test(part)) {
+    if (/[\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]/u.test(part)) {
       return (
         <span key={partIndex} className="my-seg">
           {part}
@@ -1087,6 +1295,90 @@ function seededRandom(seed) {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+function normalizeOptionId(value) {
+  return String(value ?? '').trim();
+}
+
+function normalizeCorrectAnswers(raw) {
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.map(normalizeOptionId).filter(Boolean);
+}
+
+function makeDeepSeekAutoPromptUrl(payload) {
+  return `https://chat.deepseek.com/?auto_prompt=${encodeURIComponent(payload)}`;
+}
+
+function openUrlWithFallback(url) {
+  if (typeof window === 'undefined') return;
+
+  const opened = window.open(url, '_blank');
+  if (!opened) {
+    window.location.href = url;
+  }
+}
+
+function buildChoiceQuestionPayloadForDeepSeek({
+  questionText,
+  questionImg,
+  options,
+  selectedIds,
+  correctAnswers,
+}) {
+  const selectedTexts = options
+    .filter((option) => selectedIds.includes(normalizeOptionId(option.id)))
+    .map((option) => option.text || `选项 ${option.id}`)
+    .filter(Boolean);
+
+  const correctTexts = options
+    .filter((option) => correctAnswers.includes(normalizeOptionId(option.id)))
+    .map((option) => option.text || `选项 ${option.id}`)
+    .filter(Boolean);
+
+  const wrongText = selectedTexts.length ? selectedTexts.join('；') : '未选择';
+  const correctText = correctTexts.length ? correctTexts.join('；') : '未知';
+
+  const qText = [
+    questionText || '',
+    questionImg ? `图片：${questionImg}` : '',
+    options.length
+      ? `选项：${options
+          .map((option) => `${normalizeOptionId(option.id)}. ${option.text || ''}`)
+          .join('；')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return `${qText}||${wrongText}||${correctText}`;
+}
+
+function buildSimilarQuestionGenerationPrompt({ questionText, options, correctAnswers }) {
+  return [
+    '你现在不是讲题，而是生成一道新的互动选择题。',
+    '请根据下面原题生成一道同类型、同难度的新题。',
+    '',
+    '必须只输出合法 JSON，不要 Markdown，不要代码块，不要解释。',
+    'JSON 必须符合这个结构：',
+    CHOICE_QUESTION_SCHEMA_TEXT.trim(),
+    '',
+    '规则：',
+    '1. options 必须是 A、B、C、D 四个选项。',
+    '2. correctAnswer 必须是 A/B/C/D 之一。',
+    '3. 题干和选项适合直接给 React 选择题组件渲染。',
+    '4. explanation 要简短，适合作为题库解析。',
+    '5. 不要复用原题原句，要生成新的题。',
+    '',
+    '原题：',
+    questionText || '',
+    '',
+    '原选项：',
+    options.map((option) => `${normalizeOptionId(option.id)}. ${option.text || ''}`).join('\n'),
+    '',
+    '原正确答案：',
+    correctAnswers.join(', '),
+  ].join('\n');
 }
 
 function useTimeoutManager() {
@@ -1301,7 +1593,7 @@ const SettingsPanel = memo(function SettingsPanel({
         </div>
 
         <div className="setting-desc" style={{ marginTop: 8 }}>
-          API 内嵌适合留在应用里直接讲题；DeepSeek 网页适合用油猴脚本、专家模式、网页上下文。
+          API 内嵌适合留在应用里直接讲题；DeepSeek 网页适合配合油猴脚本、专家模式、网页上下文。
         </div>
       </div>
     </div>
@@ -1318,7 +1610,7 @@ const OptionCard = memo(function OptionCard({
   showPinyin,
   onToggle,
 }) {
-  const optionId = String(option.id);
+  const optionId = normalizeOptionId(option.id);
   const hasImage = Boolean(option.img || option.imageUrl);
 
   const className = useMemo(() => {
@@ -1383,13 +1675,10 @@ export default function XuanZeTi({
   const questionImg = data.imageUrl || questionObj.imageUrl || questionObj.img || '';
   const options = useMemo(() => (Array.isArray(data.options) ? data.options : []), [data.options]);
 
-  const correctAnswers = useMemo(() => {
-    const raw = data.correctAnswer || [];
-    return (Array.isArray(raw) ? raw : [raw]).map(String);
-  }, [data.correctAnswer]);
+  const correctAnswers = useMemo(() => normalizeCorrectAnswers(data.correctAnswer), [data.correctAnswer]);
 
   const optionSignature = useMemo(
-    () => options.map((opt) => `${String(opt.id)}:${opt.text || ''}`).join('|'),
+    () => options.map((opt) => `${normalizeOptionId(opt.id)}:${opt.text || ''}`).join('|'),
     [options]
   );
 
@@ -1431,6 +1720,9 @@ export default function XuanZeTi({
 
   const audioControllerRef = useRef(new AudioPlaybackController());
   const mountedRef = useRef(false);
+  const aiSettingsRef = useRef(aiSettings);
+  const currentRateRef = useRef(0);
+  const autoPlayRef = useRef(prefs.autoPlay);
 
   const { addTimeout, clearTimeouts } = useTimeoutManager();
   const { openOverlay, closeOverlay, closeTopOverlay, resetOverlayStack } = useOverlayHistory();
@@ -1471,7 +1763,19 @@ export default function XuanZeTi({
 
   const currentRate = useMemo(() => speedLabelToRate(prefs.ttsSpeed), [prefs.ttsSpeed]);
 
-  const hasMyanmar = useMemo(() => /[\u1000-\u109F]/.test(questionText), [questionText]);
+  useEffect(() => {
+    aiSettingsRef.current = aiSettings;
+  }, [aiSettings]);
+
+  useEffect(() => {
+    currentRateRef.current = currentRate;
+  }, [currentRate]);
+
+  useEffect(() => {
+    autoPlayRef.current = prefs.autoPlay;
+  }, [prefs.autoPlay]);
+
+  const hasMyanmar = useMemo(() => /[\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]/u.test(questionText), [questionText]);
   const questionLength = String(questionText || '').trim().length;
   const isLongQuestion = questionLength > 24;
   const isVeryLongQuestion = questionLength > 40;
@@ -1551,11 +1855,11 @@ export default function XuanZeTi({
     setShowAIExplanation(false);
     resetOverlayStack();
 
-    if (questionText && prefs.autoPlay) {
+    if (questionText && autoPlayRef.current) {
       addTimeout(() => {
         audioControllerRef.current.playMixed(
           questionText,
-          { rate: currentRate, aiSettings },
+          { rate: currentRateRef.current, aiSettings: aiSettingsRef.current },
           () => mountedRef.current && setIsQuestionPlaying(true),
           () => mountedRef.current && setIsQuestionPlaying(false)
         );
@@ -1563,11 +1867,8 @@ export default function XuanZeTi({
     }
   }, [
     addTimeout,
-    aiSettings,
     clearTimeouts,
-    currentRate,
     optionShuffleKey,
-    prefs.autoPlay,
     questionText,
     resetOverlayStack,
     stopAllAudio,
@@ -1617,7 +1918,7 @@ export default function XuanZeTi({
         }
       }, 180);
 
-      const option = shuffledOptions.find((item) => String(item.id) === optionId);
+      const option = shuffledOptions.find((item) => normalizeOptionId(item.id) === optionId);
       if (option?.text) {
         playOptionText(optionId, option.text);
       }
@@ -1674,7 +1975,7 @@ export default function XuanZeTi({
       questionText,
       questionImage: questionImg || '',
       options: shuffledOptions.map((option) => ({
-        id: String(option.id),
+        id: normalizeOptionId(option.id),
         text: option.text,
         imageUrl: option.img || option.imageUrl || '',
       })),
@@ -1691,35 +1992,15 @@ export default function XuanZeTi({
   const handleOpenDeepSeekWeb = useCallback(() => {
     stopAllAudio();
 
-    const selectedTexts = shuffledOptions
-      .filter((option) => selectedIds.includes(String(option.id)))
-      .map((option) => option.text || `选项 ${option.id}`)
-      .filter(Boolean);
+    const payload = buildChoiceQuestionPayloadForDeepSeek({
+      questionText,
+      questionImg,
+      options: shuffledOptions,
+      selectedIds,
+      correctAnswers,
+    });
 
-    const correctTexts = shuffledOptions
-      .filter((option) => correctAnswers.includes(String(option.id)))
-      .map((option) => option.text || `选项 ${option.id}`)
-      .filter(Boolean);
-
-    const wrongText = selectedTexts.length ? selectedTexts.join('；') : '未选择';
-    const correctText = correctTexts.length ? correctTexts.join('；') : '未知';
-
-    const qText = [
-      questionText || '',
-      questionImg ? `图片：${questionImg}` : '',
-      shuffledOptions.length
-        ? `选项：${shuffledOptions
-            .map((option) => `${String(option.id)}. ${option.text || ''}`)
-            .join('；')}`
-        : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    const payload = `${qText}||${wrongText}||${correctText}`;
-    const url = `https://chat.deepseek.com/?auto_prompt=${encodeURIComponent(payload)}`;
-
-    window.open(url, '_blank', 'noopener,noreferrer');
+    openUrlWithFallback(makeDeepSeekAutoPromptUrl(payload));
   }, [
     correctAnswers,
     questionImg,
@@ -1728,6 +2009,19 @@ export default function XuanZeTi({
     shuffledOptions,
     stopAllAudio,
   ]);
+
+  const handleGenerateSimilarQuestion = useCallback(() => {
+    stopAllAudio();
+
+    const generationPrompt = buildSimilarQuestionGenerationPrompt({
+      questionText,
+      options: shuffledOptions,
+      correctAnswers,
+    });
+
+    const payload = `${generationPrompt}||生成同类互动选择题||只输出组件可用 JSON`;
+    openUrlWithFallback(makeDeepSeekAutoPromptUrl(payload));
+  }, [correctAnswers, questionText, shuffledOptions, stopAllAudio]);
 
   const handleOpenAIExplanation = useCallback(() => {
     stopAllAudio();
@@ -1816,7 +2110,7 @@ export default function XuanZeTi({
       <div className="xzt-scroll-area">
         <div className={`options-grid ${hasOptionImages ? 'has-images' : ''}`}>
           {shuffledOptions.map((option) => {
-            const optionId = String(option.id);
+            const optionId = normalizeOptionId(option.id);
 
             return (
               <OptionCard
@@ -1862,9 +2156,15 @@ export default function XuanZeTi({
           {isRight ? '太棒了，也可以看看为什么对。' : '你已经很接近正确答案了。'}
         </div>
 
-        <button className="ai-btn" onClick={handleOpenAIExplanation} type="button">
-          <FaRobot /> {isRight ? '为什么对？' : aiMode === 'deepseek' ? 'DeepSeek 解析' : 'AI 解析'}
-        </button>
+        <div className="result-actions">
+          <button className="ai-btn" onClick={handleOpenAIExplanation} type="button">
+            <FaRobot /> {aiMode === 'deepseek' ? 'DeepSeek 解析' : isRight ? '为什么对？' : 'AI 解析'}
+          </button>
+
+          <button className="ai-btn secondary" onClick={handleGenerateSimilarQuestion} type="button">
+            <FaRobot /> DeepSeek 出同类题
+          </button>
+        </div>
 
         <button
           className={`next-btn ${isRight ? 'btn-correct' : 'btn-wrong'}`}
