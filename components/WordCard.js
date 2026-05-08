@@ -400,6 +400,14 @@ function injectRuntimeStyles() {
       50% { height: 24px; }
     }
     .word-card-scroll::-webkit-scrollbar { width: 0; height: 0; }
+    .word-card-flip-scene { perspective: 1400px; transform-style: preserve-3d; }
+    .word-card-flip-inner { transform-style: preserve-3d; will-change: transform; }
+    .word-card-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+    .word-card-face-back { transform: rotateY(180deg); }
+    @keyframes wordCardSoftFloat {
+      0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+      50% { transform: translate3d(0, -10px, 0) scale(1.03); }
+    }
     @media (prefers-reduced-motion: reduce) {
       .word-card-animated, .word-card-animated * {
         animation-duration: 0.001ms !important;
@@ -562,7 +570,7 @@ const PronunciationComparison = memo(({ correctWord, pinyinText, settings, onClo
   };
 
   return (
-    <div style={styles.comparisonOverlay} onClick={onClose} role="presentation">
+    <div style={styles.comparisonOverlay} onClick={onClose} role="presentation" data-no-gesture="true">
       <div style={styles.comparisonPanel} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
         <div style={styles.recordHeader}>
           <h3 style={styles.recordTitle}>发音跟读对比</h3>
@@ -706,7 +714,7 @@ const SettingsPanel = memo(({ settings, setSettings, onClose }) => {
   };
 
   return (
-    <div style={styles.settingsModal} onClick={onClose} role="presentation">
+    <div style={styles.settingsModal} onClick={onClose} role="presentation" data-no-gesture="true">
       <div style={styles.settingsContent} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
         <button style={styles.closeButton} onClick={onClose} aria-label="关闭设置">
           <FaTimes />
@@ -863,7 +871,7 @@ const JumpModal = memo(({ max, current, onJump, onClose }) => {
   };
 
   return (
-    <div style={styles.jumpModalOverlay} onClick={onClose} role="presentation">
+    <div style={styles.jumpModalOverlay} onClick={onClose} role="presentation" data-no-gesture="true">
       <div style={styles.jumpModalContent} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
         <h3 style={styles.jumpModalTitle}>Go to</h3>
         <input
@@ -1231,12 +1239,13 @@ const WordCard = ({ words = [], isOpen, onClose, progressKey = 'default', level 
     if (!item) return null;
 
     const backgroundStyle = settings.backgroundImage
-      ? { background: `linear-gradient(rgba(240,244,248,0.54), rgba(240,244,248,0.72)), url(${settings.backgroundImage}) center/cover no-repeat` }
+      ? {
+          background: `linear-gradient(135deg, rgba(255,255,255,0.48), rgba(224,242,254,0.62), rgba(250,245,255,0.58)), url(${settings.backgroundImage}) center/cover no-repeat`,
+        }
       : {};
 
     return (
-      <animated.div style={{ ...styles.fullScreen, ...backgroundStyle, ...style }} className="word-card-animated">
-        <div style={styles.gestureArea} {...bind()} onClick={handleToggleReveal} aria-hidden="true" />
+      <animated.div style={{ ...styles.fullScreen, ...backgroundStyle, ...style }} className="word-card-animated" {...bind()}>
 
         {writerChar && <HanziModal word={writerChar} onClose={() => setWriterChar(null)} />}
         {isSettingsOpen && <SettingsPanel settings={settings} setSettings={setSettings} onClose={() => setIsSettingsOpen(false)} />}
@@ -1264,85 +1273,124 @@ const WordCard = ({ words = [], isOpen, onClose, progressKey = 'default', level 
 
             return (
               <animated.div key={cardData.id} style={{ ...styles.animatedCardShell, ...cardStyle }}>
-                <div style={styles.cardContainer} className="word-card-scroll" data-no-gesture="true">
-                  <div style={styles.cardInner}>
-                    <button
-                      type="button"
-                      style={styles.wordButton}
-                      onClick={(event) => handleManualPlay(cardData, event)}
-                      aria-label="播放中文发音"
+                <div style={styles.cardContainer} className="word-card-scroll">
+                  <div
+                    style={styles.flipScene}
+                    className="word-card-flip-scene"
+                    onClick={handleToggleReveal}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={isRevealed ? '点击翻回正面' : '点击翻到背面'}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleToggleReveal();
+                      }
+                    }}
+                  >
+                    <div
+                      style={{
+                        ...styles.flipInner,
+                        transform: isRevealed ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                      }}
+                      className="word-card-flip-inner"
                     >
-                      <div style={styles.pinyin}>{getPinyin(cardData)}</div>
-                      <div style={styles.textWordChinese}>{cardData.chinese}</div>
-                    </button>
+                      <div style={{ ...styles.cardFace, ...styles.cardFaceFront }} className="word-card-face">
+                        <div style={styles.frontGlow} aria-hidden="true" />
+                        <div style={styles.pinyin}>{getPinyin(cardData)}</div>
+                        <div style={styles.textWordChinese}>{cardData.chinese}</div>
+                        <div style={styles.flipHint}>点击翻到背面</div>
+                      </div>
 
-                    {isRevealed && (
-                      <animated.div style={styles.revealedContent}>
-                        {cardData.burmese && (
+                      <div
+                        style={{ ...styles.cardFace, ...styles.cardFaceBack }}
+                        className="word-card-face word-card-face-back word-card-scroll"
+                      >
+                        <div style={styles.backHeader}>
+                          <div>
+                            <div style={styles.backPinyin}>{getPinyin(cardData)}</div>
+                            <div style={styles.backChinese}>{cardData.chinese}</div>
+                          </div>
                           <button
                             type="button"
-                            style={styles.definitionBox}
-                            onClick={(event) =>
-                              playTTS(
-                                cardData.burmese,
-                                settings.voiceBurmese,
-                                settings.speechRateBurmese,
-                                null,
-                                event,
-                              )
-                            }
+                            style={styles.miniPlayButton}
+                            data-no-gesture="true"
+                            onClick={(event) => handleManualPlay(cardData, event)}
+                            aria-label="播放中文发音"
                           >
-                            <div style={styles.textWordBurmese}>{cardData.burmese}</div>
+                            <FaVolumeUp size={15} />
                           </button>
-                        )}
+                        </div>
 
-                        {cardData.explanation && (
-                          <button
-                            type="button"
-                            style={styles.explanationBox}
-                            onClick={(event) =>
-                              playTTS(
-                                cardData.explanation,
-                                settings.voiceBurmese,
-                                settings.speechRateBurmese,
-                                null,
-                                event,
-                              )
-                            }
-                          >
-                            <div style={styles.explanationText}>{cardData.explanation}</div>
-                          </button>
-                        )}
+                        <div style={styles.backContent}>
+                          {cardData.burmese && (
+                            <div
+                              style={styles.definitionBox}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                playTTS(
+                                  cardData.burmese,
+                                  settings.voiceBurmese,
+                                  settings.speechRateBurmese,
+                                  null,
+                                  event,
+                                );
+                              }}
+                            >
+                              <div style={styles.textWordBurmese}>{cardData.burmese}</div>
+                            </div>
+                          )}
 
-                        {cardData.mnemonic && <div style={styles.mnemonicBox}>{cardData.mnemonic}</div>}
+                          {cardData.explanation && (
+                            <div
+                              style={styles.explanationBox}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                playTTS(
+                                  cardData.explanation,
+                                  settings.voiceBurmese,
+                                  settings.speechRateBurmese,
+                                  null,
+                                  event,
+                                );
+                              }}
+                            >
+                              <div style={styles.explanationText}>{cardData.explanation}</div>
+                            </div>
+                          )}
 
-                        {cardData.example && (
-                          <button
-                            type="button"
-                            style={styles.exampleBox}
-                            onClick={(event) =>
-                              playTTS(cardData.example, settings.voiceChinese, settings.speechRateChinese, null, event)
-                            }
-                          >
-                            <div style={styles.examplePinyin}>{getPinyinText(cardData.example)}</div>
-                            <div style={styles.exampleText}>{cardData.example}</div>
-                          </button>
-                        )}
+                          {cardData.mnemonic && <div style={styles.mnemonicBox}>{cardData.mnemonic}</div>}
 
-                        {cardData.example2 && (
-                          <button
-                            type="button"
-                            style={styles.exampleBox}
-                            onClick={(event) =>
-                              playTTS(cardData.example2, settings.voiceChinese, settings.speechRateChinese, null, event)
-                            }
-                          >
-                            <div style={styles.examplePinyin}>{getPinyinText(cardData.example2)}</div>
-                            <div style={styles.exampleText}>{cardData.example2}</div>
-                          </button>
-                        )}
-                      </animated.div>
-                    )}
+                          {cardData.example && (
+                            <div
+                              style={styles.exampleBox}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                playTTS(cardData.example, settings.voiceChinese, settings.speechRateChinese, null, event);
+                              }}
+                            >
+                              <div style={styles.examplePinyin}>{getPinyinText(cardData.example)}</div>
+                              <div style={styles.exampleText}>{cardData.example}</div>
+                            </div>
+                          )}
+
+                          {cardData.example2 && (
+                            <div
+                              style={styles.exampleBox}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                playTTS(cardData.example2, settings.voiceChinese, settings.speechRateChinese, null, event);
+                              }}
+                            >
+                              <div style={styles.examplePinyin}>{getPinyinText(cardData.example2)}</div>
+                              <div style={styles.exampleText}>{cardData.example2}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={styles.flipHintBack}>点击空白处翻回正面</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </animated.div>
@@ -1435,7 +1483,8 @@ const styles = {
     justifyContent: 'center',
     overflow: 'hidden',
     touchAction: 'none',
-    backgroundColor: '#f0f4f8',
+    background:
+      'radial-gradient(circle at 18% 18%, rgba(191, 219, 254, 0.72), transparent 30%), radial-gradient(circle at 82% 14%, rgba(221, 214, 254, 0.68), transparent 34%), radial-gradient(circle at 50% 92%, rgba(167, 243, 208, 0.52), transparent 36%), linear-gradient(135deg, #f8fbff 0%, #eef7ff 42%, #fff7fb 100%)',
     userSelect: 'none',
   },
   gestureArea: {
@@ -1444,6 +1493,7 @@ const styles = {
     width: '100%',
     height: '100%',
     zIndex: 0,
+    pointerEvents: 'none',
   },
   animatedCardShell: {
     position: 'absolute',
@@ -1454,25 +1504,19 @@ const styles = {
     justifyContent: 'center',
     width: '100%',
     height: '100%',
-    padding: '64px 15px 138px 15px',
+    padding: '54px 14px 132px 14px',
     pointerEvents: 'none',
   },
   cardContainer: {
     width: '100%',
-    maxWidth: 520,
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'center',
-    background: 'rgba(255, 255, 255, 0.34)',
-    border: '1px solid rgba(255, 255, 255, 0.58)',
-    borderRadius: 28,
-    overflowY: 'auto',
-    overflowX: 'hidden',
-    padding: '34px 14px',
-    boxShadow: '0 24px 80px rgba(15, 23, 42, 0.10)',
-    backdropFilter: 'blur(12px)',
+    background: 'transparent',
+    overflow: 'visible',
+    padding: 0,
     pointerEvents: 'auto',
   },
   cardInner: {
@@ -1481,6 +1525,120 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
+  },
+  flipScene: {
+    width: 'min(100%, 560px)',
+    height: 'min(100%, 620px)',
+    minHeight: 390,
+    cursor: 'pointer',
+    outline: 'none',
+    touchAction: 'none',
+  },
+  flipInner: {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    transition: 'transform 560ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+  },
+  cardFace: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+    borderRadius: 34,
+    border: '1px solid rgba(255, 255, 255, 0.72)',
+    background:
+      'linear-gradient(145deg, rgba(255,255,255,0.62), rgba(255,255,255,0.32))',
+    boxShadow: '0 30px 90px rgba(31, 41, 55, 0.13), inset 0 1px 0 rgba(255,255,255,0.65)',
+    backdropFilter: 'blur(22px) saturate(1.35)',
+    WebkitBackdropFilter: 'blur(22px) saturate(1.35)',
+    overflow: 'hidden',
+    padding: '34px 20px',
+  },
+  cardFaceFront: {
+    gap: 10,
+  },
+  cardFaceBack: {
+    justifyContent: 'flex-start',
+    gap: 14,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    padding: '24px 18px 20px',
+  },
+  frontGlow: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, rgba(96,165,250,0.20), rgba(244,114,182,0.14))',
+    filter: 'blur(10px)',
+    animation: 'wordCardSoftFloat 6s ease-in-out infinite',
+    pointerEvents: 'none',
+  },
+  flipHint: {
+    marginTop: 28,
+    color: 'rgba(75, 85, 99, 0.72)',
+    fontSize: '0.92rem',
+    fontWeight: 800,
+    borderRadius: 999,
+    padding: '8px 14px',
+    background: 'rgba(255,255,255,0.42)',
+    border: '1px solid rgba(255,255,255,0.56)',
+  },
+  flipHintBack: {
+    marginTop: 'auto',
+    paddingTop: 10,
+    color: 'rgba(107, 114, 128, 0.75)',
+    fontSize: '0.82rem',
+    fontWeight: 700,
+  },
+  backHeader: {
+    width: '100%',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    flexShrink: 0,
+  },
+  backPinyin: {
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    color: '#d97706',
+    fontSize: '0.98rem',
+    fontWeight: 800,
+    letterSpacing: '0.04em',
+    textAlign: 'left',
+  },
+  backChinese: {
+    color: '#111827',
+    fontSize: '1.9rem',
+    fontWeight: 900,
+    lineHeight: 1.1,
+    textAlign: 'left',
+  },
+  miniPlayButton: {
+    ...baseButtonReset,
+    width: 42,
+    height: 42,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#2563eb',
+    background: 'rgba(255,255,255,0.72)',
+    border: '1px solid rgba(255,255,255,0.78)',
+    boxShadow: '0 8px 18px rgba(37, 99, 235, 0.12)',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  backContent: {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
   },
   wordButton: {
     ...baseButtonReset,
@@ -1495,6 +1653,8 @@ const styles = {
     fontFamily: 'Arial, Helvetica, sans-serif',
     fontSize: 'clamp(1.15rem, 4vw, 1.45rem)',
     color: '#d97706',
+    position: 'relative',
+    zIndex: 1,
     textShadow: 'none',
     marginBottom: '0.8rem',
     letterSpacing: '0.05em',
@@ -1505,6 +1665,8 @@ const styles = {
     fontSize: 'clamp(2.55rem, 13vw, 5.4rem)',
     fontWeight: 900,
     color: '#111827',
+    position: 'relative',
+    zIndex: 1,
     lineHeight: 1.05,
     wordBreak: 'break-word',
     textShadow: '0 8px 34px rgba(17, 24, 39, 0.08)',
@@ -1518,7 +1680,6 @@ const styles = {
     gap: 10,
   },
   definitionBox: {
-    ...baseButtonReset,
     cursor: 'pointer',
     textAlign: 'center',
     background: 'rgba(255,255,255,0.4)',
@@ -1536,7 +1697,6 @@ const styles = {
     textShadow: 'none',
   },
   explanationBox: {
-    ...baseButtonReset,
     color: '#16a34a',
     textAlign: 'center',
     fontSize: '1.08rem',
@@ -1564,7 +1724,6 @@ const styles = {
     lineHeight: 1.45,
   },
   exampleBox: {
-    ...baseButtonReset,
     color: '#374151',
     width: '100%',
     maxWidth: 430,
@@ -1607,8 +1766,8 @@ const styles = {
   },
   rightIconButton: {
     ...baseButtonReset,
-    background: 'rgba(255,255,255,0.92)',
-    border: '1px solid #e5e7eb',
+    background: 'rgba(255,255,255,0.62)',
+    border: '1px solid rgba(255,255,255,0.72)',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -1616,7 +1775,9 @@ const styles = {
     width: 42,
     height: 42,
     borderRadius: '50%',
-    boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)',
+    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.10)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
     transition: 'transform 0.2s, box-shadow 0.2s',
     color: '#4b5563',
     touchAction: 'manipulation',
