@@ -37,9 +37,9 @@ import HanziModal from '@/components/HanziModal';
 const DB_NAME = 'ChineseLearningDB';
 const STORE_NAME = 'favoriteWords';
 const SETTINGS_KEY = 'learningWordCardSettings';
-const STYLE_ID = 'word-card-runtime-styles-v4';
+const STYLE_ID = 'word-card-runtime-styles-v5';
 const PROGRESS_PREFIX = 'word_progress_';
-const HINT_SEEN_KEY = 'wordcard_swipe_hint_seen_v4';
+const HINT_SEEN_KEY = 'wordcard_swipe_hint_seen_v5';
 
 const DEFAULT_SETTINGS = {
   order: 'sequential',
@@ -57,6 +57,7 @@ const DEFAULT_SETTINGS = {
   speechRateChinese: -50,
   speechRateBurmese: -50,
   backgroundImage: '',
+  uiLanguage: 'zh-my',
 };
 
 const CHINESE_VOICES = [
@@ -95,6 +96,118 @@ const BURMESE_VOICES = [
   { value: 'my-MM-NilarNeural', label: 'Nilar · 女声' },
   { value: 'my-MM-ThihaNeural', label: 'Thiha · 男声' },
 ];
+
+const UI_LANGUAGES = [
+  { value: 'zh-my', label: '中文 + မြန်မာ' },
+  { value: 'zh', label: '中文' },
+  { value: 'my', label: 'မြန်မာ' },
+];
+
+const UI_TEXT_ZH = {
+  swipeHint: '上滑下一张 · 下滑上一张 · 左右滑关闭',
+  frontTip: '点击翻到背面',
+  backTip: '点击空白处翻回正面',
+  know: '知道',
+  dontKnow: '不知道',
+  settings: '设置',
+  spelling: '拼读音频',
+  recording: '录音跟读',
+  stroke: '笔顺',
+  favorite: '收藏',
+  meaning: '缅文释义',
+  explanation: '补充说明',
+  mnemonic: '记忆提示',
+  example1: '例句 1',
+  example2: '例句 2',
+  done: '完成',
+  close: '关闭',
+  language: '界面语言',
+  display: '显示内容',
+  chinese: '中文',
+  pinyin: '拼音',
+  burmese: '缅文',
+  example: '例句',
+  order: '单词顺序',
+  sequential: '顺序',
+  random: '随机',
+  autoplay: '自动播放',
+  chineseAudio: '中文音频',
+  burmeseTts: '缅文 TTS',
+  exampleTts: '例句 TTS',
+  autoBrowse: '自动切卡',
+  delay: '自动切卡延迟',
+  chineseVoice: '中文发音人',
+  burmeseVoice: '缅文发音人',
+  chineseRate: '中文语速',
+  burmeseRate: '缅文语速',
+  background: '背景图',
+  upload: '上传图片',
+  resetGradient: '恢复渐变',
+  saveHint: '点击底部“保存”后生效',
+  cancel: '取消',
+  save: '保存',
+  jumpTo: '跳转到',
+  confirm: '确定',
+  finished: '恭喜，已学完本组单词',
+};
+
+const UI_TEXT_MY = {
+  swipeHint: 'အပေါ်ဆွဲ နောက်တစ်ခု · အောက်ဆွဲ အရင်တစ်ခု · ဘေးဆွဲ ပိတ်',
+  frontTip: 'နောက်ဘက်ကြည့်ရန် နှိပ်ပါ',
+  backTip: 'အလွတ်နေရာကို နှိပ်၍ ရှေ့ဘက်ပြန်ကြည့်ပါ',
+  know: 'သိတယ်',
+  dontKnow: 'မသိဘူး',
+  settings: 'ဆက်တင်',
+  spelling: 'အသံ拼读',
+  recording: 'အသံသွင်းလေ့ကျင့်',
+  stroke: 'ရေးနည်း',
+  favorite: 'သိမ်းရန်',
+  meaning: 'မြန်မာအဓိပ္ပါယ်',
+  explanation: 'ရှင်းလင်းချက်',
+  mnemonic: 'မှတ်သားရန်',
+  example1: 'ဥပမာ ၁',
+  example2: 'ဥပမာ ၂',
+  done: 'ပြီးပြီ',
+  close: 'ပိတ်မည်',
+  language: 'ဘာသာစကား',
+  display: 'ပြသမည့်အရာ',
+  chinese: 'တရုတ်စာ',
+  pinyin: 'ပင်ယင်',
+  burmese: 'မြန်မာစာ',
+  example: 'ဥပမာ',
+  order: 'အစဉ်လိုက်',
+  sequential: 'စဉ်လိုက်',
+  random: 'ကျပန်း',
+  autoplay: 'အလိုအလျောက်ဖွင့်',
+  chineseAudio: 'တရုတ်အသံ',
+  burmeseTts: 'မြန်မာ TTS',
+  exampleTts: 'ဥပမာ TTS',
+  autoBrowse: 'အလိုအလျောက်ပြောင်း',
+  delay: 'ပြောင်းမည့်အချိန်',
+  chineseVoice: 'တရုတ်အသံရွေးရန်',
+  burmeseVoice: 'မြန်မာအသံရွေးရန်',
+  chineseRate: 'တရုတ်အမြန်နှုန်း',
+  burmeseRate: 'မြန်မာအမြန်နှုန်း',
+  background: 'နောက်ခံပုံ',
+  upload: 'ပုံတင်ရန်',
+  resetGradient: 'Gradient ပြန်ထားရန်',
+  saveHint: 'အောက်ခြေ Save ကိုနှိပ်မှ သက်ရောက်မည်',
+  cancel: 'မလုပ်တော့ပါ',
+  save: 'သိမ်းမည်',
+  jumpTo: 'သွားရန်',
+  confirm: 'အတည်ပြု',
+  finished: 'ဂုဏ်ယူပါတယ်၊ ဒီအုပ်စု ပြီးပါပြီ',
+};
+
+function createUiText(language = 'zh-my') {
+  return (key) => {
+    const zh = UI_TEXT_ZH[key] || key;
+    const my = UI_TEXT_MY[key] || key;
+    if (language === 'zh') return zh;
+    if (language === 'my') return my;
+    return `${zh} / ${my}`;
+  };
+}
 
 // =================================================================================
 // IndexedDB favorites
@@ -298,7 +411,7 @@ function injectRuntimeStyles() {
 
     .word-card-pinyin,
     .word-card-pinyin * {
-      font-family: Arial, Helvetica, "Noto Sans", sans-serif !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, "Noto Sans", sans-serif !important;
       font-variant-ligatures: none;
       letter-spacing: 0 !important;
       line-height: 1.42 !important;
@@ -308,7 +421,7 @@ function injectRuntimeStyles() {
 
     .word-card-hanzi-scope [class*="pinyin"],
     .word-card-hanzi-scope .pinyin {
-      font-family: Arial, Helvetica, "Noto Sans", sans-serif !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, "Noto Sans", sans-serif !important;
       font-variant-ligatures: none !important;
       letter-spacing: 0 !important;
       line-height: 1.45 !important;
@@ -641,6 +754,37 @@ function useLockPageInteractions(enabled) {
   }, [enabled]);
 }
 
+
+function useAutoFullscreen(enabled) {
+  const enteredRef = useRef(false);
+
+  useEffect(() => {
+    if (!enabled || typeof document === 'undefined') return undefined;
+
+    const doc = document;
+    const el = doc.documentElement;
+    const fullscreenElement = doc.fullscreenElement || doc.webkitFullscreenElement;
+    const request = el.requestFullscreen || el.webkitRequestFullscreen;
+
+    if (!fullscreenElement && request) {
+      Promise.resolve(request.call(el))
+        .then(() => { enteredRef.current = true; })
+        .catch(() => {
+          // Mobile browsers often require a user gesture. CSS 100dvh still keeps the card fullscreen-like.
+        });
+    }
+
+    return () => {
+      const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+      const current = doc.fullscreenElement || doc.webkitFullscreenElement;
+      if (enteredRef.current && current && exit) {
+        Promise.resolve(exit.call(doc)).catch(() => {});
+        enteredRef.current = false;
+      }
+    };
+  }, [enabled]);
+}
+
 // =================================================================================
 // Error boundary for HanziModal
 // =================================================================================
@@ -911,6 +1055,7 @@ const PronunciationComparison = memo(function PronunciationComparison({
 // =================================================================================
 const SettingsPanel = memo(function SettingsPanel({ settings, onCancel, onSave }) {
   const [draft, setDraft] = useState(settings);
+  const t = useMemo(() => createUiText(draft.uiLanguage), [draft.uiLanguage]);
 
   useEffect(() => {
     setDraft(settings);
@@ -930,49 +1075,56 @@ const SettingsPanel = memo(function SettingsPanel({ settings, onCancel, onSave }
     <div style={styles.settingsOverlay} onClick={onCancel} data-no-gesture="true" role="presentation">
       <div style={styles.settingsPanel} onClick={stopEvent} role="dialog" aria-modal="true">
         <div style={styles.settingsHeader}>
-          <h3 style={styles.settingsTitle}>学习设置</h3>
-          <div style={styles.mutedInfo}>点击底部“保存”后生效</div>
+          <h3 style={styles.settingsTitle}>{t('settings')}</h3>
+          <div style={styles.mutedInfo}>{t('saveHint')}</div>
         </div>
 
         <div style={styles.settingsBody} className="word-card-scroll" data-allow-native-scroll="true">
           <div style={styles.settingGroup}>
-            <div style={styles.settingLabel}>显示内容</div>
-            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showChinese} onChange={(e) => update('showChinese', e.target.checked)} /> 中文</label>
-            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showPinyin} onChange={(e) => update('showPinyin', e.target.checked)} /> 拼音</label>
-            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showBurmese} onChange={(e) => update('showBurmese', e.target.checked)} /> 缅文</label>
-            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showExample} onChange={(e) => update('showExample', e.target.checked)} /> 例句</label>
+            <div style={styles.settingLabel}>{t('language')}</div>
+            <select style={styles.select} value={draft.uiLanguage} onChange={(e) => update('uiLanguage', e.target.value)}>
+              {UI_LANGUAGES.map((lang) => <option key={lang.value} value={lang.value}>{lang.label}</option>)}
+            </select>
           </div>
 
           <div style={styles.settingGroup}>
-            <div style={styles.settingLabel}>单词顺序</div>
+            <div style={styles.settingLabel}>{t('display')}</div>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showChinese} onChange={(e) => update('showChinese', e.target.checked)} /> {t('chinese')}</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showPinyin} onChange={(e) => update('showPinyin', e.target.checked)} /> {t('pinyin')}</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showBurmese} onChange={(e) => update('showBurmese', e.target.checked)} /> {t('burmese')}</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showExample} onChange={(e) => update('showExample', e.target.checked)} /> {t('example')}</label>
+          </div>
+
+          <div style={styles.settingGroup}>
+            <div style={styles.settingLabel}>{t('order')}</div>
             <div style={styles.toggleRow}>
               <button
                 type="button"
                 style={{ ...styles.segmentButton, ...(draft.order === 'sequential' ? styles.segmentActive : {}) }}
                 onClick={() => update('order', 'sequential')}
               >
-                <FaSortAmountDown /> 顺序
+                <FaSortAmountDown /> {t('sequential')}
               </button>
               <button
                 type="button"
                 style={{ ...styles.segmentButton, ...(draft.order === 'random' ? styles.segmentActive : {}) }}
                 onClick={() => update('order', 'random')}
               >
-                <FaRandom /> 随机
+                <FaRandom /> {t('random')}
               </button>
             </div>
           </div>
 
           <div style={styles.settingGroup}>
-            <div style={styles.settingLabel}>自动播放</div>
-            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayChinese} onChange={(e) => update('autoPlayChinese', e.target.checked)} /> 中文音频</label>
-            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayBurmese} onChange={(e) => update('autoPlayBurmese', e.target.checked)} /> 缅文 TTS</label>
-            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayExample} onChange={(e) => update('autoPlayExample', e.target.checked)} /> 例句 TTS</label>
-            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoBrowse} onChange={(e) => update('autoBrowse', e.target.checked)} /> 自动切卡</label>
+            <div style={styles.settingLabel}>{t('autoplay')}</div>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayChinese} onChange={(e) => update('autoPlayChinese', e.target.checked)} /> {t('chineseAudio')}</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayBurmese} onChange={(e) => update('autoPlayBurmese', e.target.checked)} /> {t('burmeseTts')}</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayExample} onChange={(e) => update('autoPlayExample', e.target.checked)} /> {t('exampleTts')}</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoBrowse} onChange={(e) => update('autoBrowse', e.target.checked)} /> {t('autoBrowse')}</label>
             {draft.autoBrowse && (
               <div style={styles.sliderGroup}>
                 <div style={styles.sliderLabelRow}>
-                  <span>自动切卡延迟</span>
+                  <span>{t('delay')}</span>
                   <strong>{Math.round(clamp(draft.autoBrowseDelay, 3000, 20000) / 1000)}s</strong>
                 </div>
                 <input type="range" min="3000" max="20000" step="500" value={clamp(draft.autoBrowseDelay, 3000, 20000)} onChange={(e) => update('autoBrowseDelay', Number(e.target.value))} />
@@ -981,42 +1133,42 @@ const SettingsPanel = memo(function SettingsPanel({ settings, onCancel, onSave }
           </div>
 
           <div style={styles.settingGroup}>
-            <div style={styles.settingLabel}>中文发音人</div>
+            <div style={styles.settingLabel}>{t('chineseVoice')}</div>
             <select style={styles.select} value={draft.voiceChinese} onChange={(e) => update('voiceChinese', e.target.value)}>
               {CHINESE_VOICES.map((voice) => <option key={voice.value} value={voice.value}>{voice.label}</option>)}
             </select>
             <div style={styles.sliderGroup}>
-              <div style={styles.sliderLabelRow}><span>中文语速</span><strong>{normalizeRate(draft.speechRateChinese).toFixed(2)}x</strong></div>
+              <div style={styles.sliderLabelRow}><span>{t('chineseRate')}</span><strong>{normalizeRate(draft.speechRateChinese).toFixed(2)}x</strong></div>
               <input type="range" min="-80" max="50" step="5" value={draft.speechRateChinese} onChange={(e) => update('speechRateChinese', Number(e.target.value))} />
             </div>
           </div>
 
           <div style={styles.settingGroup}>
-            <div style={styles.settingLabel}>缅文发音人</div>
+            <div style={styles.settingLabel}>{t('burmeseVoice')}</div>
             <select style={styles.select} value={draft.voiceBurmese} onChange={(e) => update('voiceBurmese', e.target.value)}>
               {BURMESE_VOICES.map((voice) => <option key={voice.value} value={voice.value}>{voice.label}</option>)}
             </select>
             <div style={styles.sliderGroup}>
-              <div style={styles.sliderLabelRow}><span>缅文语速</span><strong>{normalizeRate(draft.speechRateBurmese).toFixed(2)}x</strong></div>
+              <div style={styles.sliderLabelRow}><span>{t('burmeseRate')}</span><strong>{normalizeRate(draft.speechRateBurmese).toFixed(2)}x</strong></div>
               <input type="range" min="-80" max="50" step="5" value={draft.speechRateBurmese} onChange={(e) => update('speechRateBurmese', Number(e.target.value))} />
             </div>
           </div>
 
           <div style={styles.settingGroup}>
-            <div style={styles.settingLabel}>背景图</div>
+            <div style={styles.settingLabel}>{t('background')}</div>
             <div style={styles.toggleRow}>
               <label style={styles.segmentButton}>
-                上传图片
+                {t('upload')}
                 <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
               </label>
-              <button type="button" style={styles.segmentButton} onClick={() => update('backgroundImage', '')}>恢复渐变</button>
+              <button type="button" style={styles.segmentButton} onClick={() => update('backgroundImage', '')}>{t('resetGradient')}</button>
             </div>
           </div>
         </div>
 
         <div style={styles.settingsFooter}>
-          <button type="button" style={styles.settingsCancelBtn} onClick={onCancel}>取消</button>
-          <button type="button" style={styles.settingsSaveBtn} onClick={() => onSave(draft)}>保存</button>
+          <button type="button" style={styles.settingsCancelBtn} onClick={onCancel}>{t('cancel')}</button>
+          <button type="button" style={styles.settingsSaveBtn} onClick={() => onSave(draft)}>{t('save')}</button>
         </div>
       </div>
     </div>
@@ -1026,8 +1178,9 @@ const SettingsPanel = memo(function SettingsPanel({ settings, onCancel, onSave }
 // =================================================================================
 // Jump modal
 // =================================================================================
-function JumpModal({ max, current, onJump, onClose }) {
+function JumpModal({ max, current, onJump, onClose, language = 'zh-my' }) {
   const [value, setValue] = useState(current + 1);
+  const t = useMemo(() => createUiText(language), [language]);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -1043,7 +1196,7 @@ function JumpModal({ max, current, onJump, onClose }) {
   return (
     <div style={styles.settingsOverlay} onClick={onClose} data-no-gesture="true" role="presentation">
       <div style={styles.jumpPanel} onClick={stopEvent} role="dialog" aria-modal="true">
-        <div style={styles.settingsTitle}>跳转到</div>
+        <div style={styles.settingsTitle}>{t('jumpTo')}</div>
         <input
           ref={inputRef}
           type="number"
@@ -1055,8 +1208,8 @@ function JumpModal({ max, current, onJump, onClose }) {
           style={styles.jumpInput}
         />
         <div style={styles.modalActionRow}>
-          <button type="button" style={styles.secondaryPillButton} onClick={onClose}>取消</button>
-          <button type="button" style={styles.primaryPillButton} onClick={confirm}>确定</button>
+          <button type="button" style={styles.secondaryPillButton} onClick={onClose}>{t('cancel')}</button>
+          <button type="button" style={styles.primaryPillButton} onClick={confirm}>{t('confirm')}</button>
         </div>
       </div>
     </div>
@@ -1081,8 +1234,11 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
   const [isSpellPlaying, setIsSpellPlaying] = useState(false);
 
   const autoBrowseTimerRef = useRef(null);
+  const lastDirectionRef = useRef(1);
+  const t = useMemo(() => createUiText(settings.uiLanguage), [settings.uiLanguage]);
 
   useLockPageInteractions(isOpen);
+  useAutoFullscreen(isOpen);
 
   useEffect(() => {
     injectRuntimeStyles();
@@ -1156,6 +1312,7 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
 
   const navigate = useCallback((direction) => {
     if (activeCards.length === 0) return;
+    lastDirectionRef.current = direction >= 0 ? 1 : -1;
     stopAllAudio();
     triggerSwitchFeedback();
     markHintSeen();
@@ -1165,13 +1322,14 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
 
   const jumpToCard = useCallback((index) => {
     if (index < 0 || index >= activeCards.length) return;
+    lastDirectionRef.current = index >= currentIndex ? 1 : -1;
     stopAllAudio();
     triggerSwitchFeedback();
     markHintSeen();
     setIsFlipped(false);
     setCurrentIndex(index);
     setIsJumping(false);
-  }, [activeCards.length, markHintSeen]);
+  }, [activeCards.length, currentIndex, markHintSeen]);
 
   const handleSpellRead = useCallback((event) => {
     stopEvent(event);
@@ -1221,14 +1379,14 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
   };
 
   const handleCardClick = (event) => {
-    if (event.target.closest('[data-no-flip="true"]')) return;
+    if (event.target?.closest?.('[data-no-flip="true"]')) return;
     markHintSeen();
     setIsFlipped((prev) => !prev);
   };
 
   const bind = useDrag(
     ({ down, movement: [mx, my], velocity, event }) => {
-      if (event.target.closest('[data-no-gesture="true"]')) return;
+      if (event.target?.closest?.('[data-no-gesture="true"]')) return;
       if (down) return;
 
       event.stopPropagation();
@@ -1323,42 +1481,95 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
       }
     : {};
 
-  const renderCard = () => {
-    if (!currentCard || activeCards.length === 0) {
+  const renderPlainBack = (card) => {
+    const blocks = [];
+    const example1Pinyin = card.example ? getPinyinText(card.example) : '';
+    const example2Pinyin = card.example2 ? getPinyinText(card.example2) : '';
+
+    if (settings.showBurmese && card.burmese) {
+      blocks.push(
+        <button key="meaning" type="button" style={styles.backPlainButton} onClick={(e) => playTTS(card.burmese, settings.voiceBurmese, settings.speechRateBurmese, null, e)} data-no-flip="true">
+          <div style={styles.plainSectionLabel}>{t('meaning')}</div>
+          <div style={styles.burmeseTextPlain}>{card.burmese}</div>
+        </button>,
+      );
+    }
+
+    if (card.explanation) {
+      blocks.push(
+        <button key="explanation" type="button" style={styles.backPlainButton} onClick={(e) => playTTS(card.explanation, settings.voiceBurmese, settings.speechRateBurmese, null, e)} data-no-flip="true">
+          <div style={styles.plainSectionLabel}>{t('explanation')}</div>
+          <div style={styles.explanationTextPlain}>{card.explanation}</div>
+        </button>,
+      );
+    }
+
+    if (card.mnemonic) {
+      blocks.push(
+        <div key="mnemonic" style={styles.backPlainBlock} data-no-flip="true">
+          <div style={styles.plainSectionLabel}>{t('mnemonic')}</div>
+          <div style={styles.memoTextPlain}>{card.mnemonic}</div>
+        </div>,
+      );
+    }
+
+    if (settings.showExample && card.example) {
+      blocks.push(
+        <button key="example1" type="button" style={styles.backPlainButton} onClick={(e) => playTTS(card.example, settings.voiceChinese, settings.speechRateChinese, null, e)} data-no-flip="true">
+          <div style={styles.plainSectionLabel}>{t('example1')}</div>
+          <div style={styles.examplePinyinPlain} className="word-card-pinyin">{example1Pinyin}</div>
+          <div style={styles.exampleTextPlain}>{card.example}</div>
+        </button>,
+      );
+    }
+
+    if (settings.showExample && card.example2) {
+      blocks.push(
+        <button key="example2" type="button" style={styles.backPlainButton} onClick={(e) => playTTS(card.example2, settings.voiceChinese, settings.speechRateChinese, null, e)} data-no-flip="true">
+          <div style={styles.plainSectionLabel}>{t('example2')}</div>
+          <div style={styles.examplePinyinPlain} className="word-card-pinyin">{example2Pinyin}</div>
+          <div style={styles.exampleTextPlain}>{card.example2}</div>
+        </button>,
+      );
+    }
+
+    return blocks;
+  };
+
+  const renderCard = (card = currentCard, cardIndex = currentIndex, isCurrent = true) => {
+    if (!card || activeCards.length === 0) {
       return (
         <div style={styles.emptyState}>
-          <div style={styles.emptyTitle}>🎉 恭喜，已学完本组单词</div>
-          <button type="button" style={styles.primaryPillButton} onClick={onClose}>关闭</button>
+          <div style={styles.emptyTitle}>{t('finished')}</div>
+          <button type="button" style={styles.primaryPillButton} onClick={onClose}>{t('close')}</button>
         </div>
       );
     }
 
-    const backPinyin1 = currentCard.example ? getPinyinText(currentCard.example) : '';
-    const backPinyin2 = currentCard.example2 ? getPinyinText(currentCard.example2) : '';
-    const pinyinText = getPinyin(currentCard);
+    const pinyinText = getPinyin(card);
 
     return (
-      <div style={styles.cardCanvas} onClick={handleCardClick}>
+      <div style={{ ...styles.cardCanvas, pointerEvents: isCurrent ? 'auto' : 'none' }} onClick={handleCardClick}>
         <div style={styles.topLeftControls} data-no-gesture="true" data-no-flip="true">
           <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={handleGoHome} title="Home"><FaHome size={18} /></button>
         </div>
 
         <div style={styles.rightControls} data-no-gesture="true" data-no-flip="true">
-          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsSettingsOpen(true); }} title="设置"><FaCog size={18} /></button>
+          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsSettingsOpen(true); }} title={t('settings')}><FaCog size={18} /></button>
           <button
             type="button"
             style={{ ...styles.iconButton, ...(isSpellPlaying ? styles.iconButtonActive : {}) }}
             onPointerDown={stopEvent}
             onClick={handleSpellRead}
-            title="拼读音频"
+            title={t('spelling')}
           >
-            <FaPlayCircle size={18} />
+            <FaPlayCircle size={20} />
           </button>
-          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsRecordingOpen(true); }} title="录音跟读"><FaMicrophone size={18} /></button>
-          {currentCard.chinese && currentCard.chinese.length <= 5 && !String(currentCard.chinese).includes(' ') && (
-            <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setWriterWord(currentCard.chinese); }} title="笔顺"><FaPenFancy size={18} /></button>
+          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsRecordingOpen(true); }} title={t('recording')}><FaMicrophone size={18} /></button>
+          {card.chinese && card.chinese.length <= 5 && !String(card.chinese).includes(' ') && (
+            <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setWriterWord(card.chinese); }} title={t('stroke')}><FaPenFancy size={18} /></button>
           )}
-          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={handleToggleFavorite} title="收藏">
+          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={handleToggleFavorite} title={t('favorite')}>
             {isFavoriteCard ? <FaHeart size={18} color="#ef4444" /> : <FaRegHeart size={18} />}
           </button>
         </div>
@@ -1368,62 +1579,27 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
             className="word-card-flip-inner"
             style={{
               ...styles.flipInner,
-              transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
+              transform: `rotateY(${isFlipped && isCurrent ? 180 : 0}deg)`,
             }}
           >
             <div className="word-card-face" style={{ ...styles.face, ...styles.frontFace }}>
               <div style={styles.centerContent}>
                 {settings.showPinyin && <div style={styles.frontPinyin} className="word-card-pinyin">{pinyinText}</div>}
-                {settings.showChinese && <div style={styles.frontChinese}>{currentCard.chinese}</div>}
-                <div style={styles.frontTip}>点击翻到背面</div>
+                {settings.showChinese && <div style={styles.frontChinese}>{card.chinese}</div>}
+                <div style={styles.frontTip}>{t('frontTip')}</div>
               </div>
             </div>
 
             <div className="word-card-face word-card-face-back" style={{ ...styles.face, ...styles.backFace }}>
-              <div style={styles.backContent} data-no-flip="true">
-                <div style={styles.backHeader}>
+              <div style={styles.backContentPlain}>
+                <div style={styles.backHeaderPlain}>
                   {settings.showPinyin && <div style={styles.backPinyin} className="word-card-pinyin">{pinyinText}</div>}
-                  {settings.showChinese && <div style={styles.backChinese}>{currentCard.chinese}</div>}
-                  <div style={styles.flipBackTip}>点击空白处翻回正面</div>
+                  {settings.showChinese && <div style={styles.backChinese}>{card.chinese}</div>}
+                  <div style={styles.flipBackTip}>{t('backTip')}</div>
                 </div>
 
-                <div style={styles.backScroll} className="word-card-scroll" data-allow-native-scroll="true">
-                  {settings.showBurmese && currentCard.burmese && (
-                    <button type="button" style={styles.meaningCard} onClick={(e) => playTTS(currentCard.burmese, settings.voiceBurmese, settings.speechRateBurmese, null, e)} data-no-flip="true">
-                      <div style={styles.sectionLabel}>缅文释义</div>
-                      <div style={styles.burmeseText}>{currentCard.burmese}</div>
-                    </button>
-                  )}
-
-                  {currentCard.explanation && (
-                    <button type="button" style={styles.explainCard} onClick={(e) => playTTS(currentCard.explanation, settings.voiceBurmese, settings.speechRateBurmese, null, e)} data-no-flip="true">
-                      <div style={styles.sectionLabel}>补充说明</div>
-                      <div style={styles.explanationText}>{currentCard.explanation}</div>
-                    </button>
-                  )}
-
-                  {currentCard.mnemonic && (
-                    <div style={styles.memoCard} data-no-flip="true">
-                      <div style={styles.sectionLabel}>记忆提示</div>
-                      <div style={styles.memoText}>{currentCard.mnemonic}</div>
-                    </div>
-                  )}
-
-                  {settings.showExample && currentCard.example && (
-                    <button type="button" style={styles.exampleCard} onClick={(e) => playTTS(currentCard.example, settings.voiceChinese, settings.speechRateChinese, null, e)} data-no-flip="true">
-                      <div style={styles.sectionLabel}>例句 1</div>
-                      <div style={styles.examplePinyin} className="word-card-pinyin">{backPinyin1}</div>
-                      <div style={styles.exampleText}>{currentCard.example}</div>
-                    </button>
-                  )}
-
-                  {settings.showExample && currentCard.example2 && (
-                    <button type="button" style={styles.exampleCard} onClick={(e) => playTTS(currentCard.example2, settings.voiceChinese, settings.speechRateChinese, null, e)} data-no-flip="true">
-                      <div style={styles.sectionLabel}>例句 2</div>
-                      <div style={styles.examplePinyin} className="word-card-pinyin">{backPinyin2}</div>
-                      <div style={styles.exampleText}>{currentCard.example2}</div>
-                    </button>
-                  )}
+                <div style={styles.backPlainScroll} className="word-card-scroll" data-allow-native-scroll="true">
+                  {renderPlainBack(card)}
                 </div>
               </div>
             </div>
@@ -1431,15 +1607,26 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
         </div>
 
         <div style={styles.bottomOverlay} data-no-gesture="true" data-no-flip="true">
-          <button type="button" style={styles.counterBadge} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsJumping(true); }}>{currentIndex + 1} / {activeCards.length}</button>
+          <button type="button" style={styles.counterBadge} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsJumping(true); }}>{cardIndex + 1} / {activeCards.length}</button>
           <div style={styles.bottomButtons}>
-            <button type="button" style={styles.dontKnowButton} onPointerDown={stopEvent} onClick={handleDontKnow}>မသိဘူး</button>
-            <button type="button" style={styles.knowButton} onPointerDown={stopEvent} onClick={handleKnow}>သိတယ်</button>
+            <button type="button" style={styles.dontKnowButton} onPointerDown={stopEvent} onClick={handleDontKnow}>{t('dontKnow')}</button>
+            <button type="button" style={styles.knowButton} onPointerDown={stopEvent} onClick={handleKnow}>{t('know')}</button>
           </div>
         </div>
       </div>
     );
   };
+
+  const cardTransitions = useTransition(activeCards.length > 0 ? currentIndex : -1, {
+    key: (item) => {
+      const card = activeCards[item];
+      return card ? `${card.id}-${item}` : 'empty';
+    },
+    from: () => ({ transform: `translate3d(0, ${lastDirectionRef.current > 0 ? '100%' : '-100%'}, 0)`, opacity: 1 }),
+    enter: { transform: 'translate3d(0, 0%, 0)', opacity: 1 },
+    leave: () => ({ transform: `translate3d(0, ${lastDirectionRef.current > 0 ? '-100%' : '100%'}, 0)`, opacity: 1 }),
+    config: { tension: 340, friction: 36, clamp: true },
+  });
 
   const content = pageTransition((pageStyle, visible) => {
     if (!visible) return null;
@@ -1454,11 +1641,18 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
         <div style={styles.gestureLayer} {...bind()}>
           {showSwipeHint && (
             <div style={styles.swipeHintBubble} data-no-gesture="true">
-              上滑下一张 · 下滑上一张 · 左右滑关闭
+              {t('swipeHint')}
             </div>
           )}
 
-          {renderCard()}
+          {cardTransitions((cardStyle, item) => {
+            const card = activeCards[item];
+            return (
+              <animated.div style={{ ...styles.cardTransitionLayer, ...cardStyle }}>
+                {renderCard(card, item, item === currentIndex)}
+              </animated.div>
+            );
+          })}
 
           {writerWord && currentCard && (
             <SafeHanziModal
@@ -1497,6 +1691,7 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
               current={currentIndex}
               onJump={jumpToCard}
               onClose={() => setIsJumping(false)}
+              language={settings.uiLanguage}
             />
           )}
         </div>
@@ -1510,7 +1705,7 @@ export default function WordCard({ words = [], isOpen, onClose, progressKey = 'd
 // =================================================================================
 // Styles
 // =================================================================================
-const pinyinFont = 'Arial, Helvetica, "Noto Sans", sans-serif';
+const pinyinFont = '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, "Noto Sans", sans-serif';
 const burmeseFont = '"Padauk", "Myanmar Text", sans-serif';
 const shadowSoft = '0 20px 60px rgba(51, 65, 85, 0.14)';
 const glassWhite = 'rgba(255,255,255,0.56)';
@@ -1520,6 +1715,9 @@ const styles = {
   fullScreen: {
     position: 'fixed',
     inset: 0,
+    width: '100vw',
+    height: '100dvh',
+    minHeight: '-webkit-fill-available',
     zIndex: 1000,
     overflow: 'hidden',
     touchAction: 'none',
@@ -1568,6 +1766,13 @@ const styles = {
     height: '100%',
     touchAction: 'none',
     overflow: 'hidden',
+  },
+  cardTransitionLayer: {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    willChange: 'transform',
   },
   cardCanvas: {
     position: 'absolute',
@@ -1809,6 +2014,87 @@ const styles = {
     fontWeight: 800,
     lineHeight: 1.42,
   },
+  backContentPlain: {
+    width: '100%',
+    height: '100%',
+    maxWidth: '760px',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: '22px',
+    padding: '0 4px',
+  },
+  backHeaderPlain: {
+    textAlign: 'center',
+    flex: '0 0 auto',
+  },
+  backPlainScroll: {
+    flex: '0 1 auto',
+    maxHeight: '58vh',
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+    touchAction: 'pan-y',
+    padding: '0 0 8px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+    textAlign: 'center',
+  },
+  backPlainButton: {
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    border: 'none',
+    background: 'transparent',
+    padding: '0 8px',
+    margin: 0,
+    cursor: 'pointer',
+    textAlign: 'center',
+  },
+  backPlainBlock: {
+    padding: '0 8px',
+    textAlign: 'center',
+  },
+  plainSectionLabel: {
+    fontSize: '0.86rem',
+    fontWeight: 950,
+    letterSpacing: '0.04em',
+    color: 'rgba(100,116,139,0.82)',
+    marginBottom: '7px',
+  },
+  burmeseTextPlain: {
+    fontFamily: burmeseFont,
+    fontSize: 'clamp(1.6rem, 6vw, 2.4rem)',
+    fontWeight: 900,
+    color: '#273449',
+    lineHeight: 1.45,
+  },
+  explanationTextPlain: {
+    fontFamily: burmeseFont,
+    fontSize: 'clamp(1.1rem, 4.6vw, 1.55rem)',
+    fontWeight: 800,
+    color: '#15803d',
+    lineHeight: 1.5,
+  },
+  memoTextPlain: {
+    fontSize: 'clamp(1rem, 4.2vw, 1.35rem)',
+    color: '#92400e',
+    fontWeight: 800,
+    lineHeight: 1.48,
+  },
+  examplePinyinPlain: {
+    fontFamily: pinyinFont,
+    fontSize: 'clamp(1rem, 4vw, 1.25rem)',
+    color: '#c76b00',
+    fontWeight: 900,
+    lineHeight: 1.48,
+    marginBottom: '4px',
+  },
+  exampleTextPlain: {
+    fontSize: 'clamp(1.25rem, 5.2vw, 1.8rem)',
+    color: '#1e293b',
+    fontWeight: 900,
+    lineHeight: 1.42,
+  },
   bottomOverlay: {
     position: 'absolute',
     left: 0,
@@ -1846,8 +2132,9 @@ const styles = {
     background: 'linear-gradient(135deg, #f59e0b, #b45309)',
     color: 'white',
     fontFamily: burmeseFont,
-    fontSize: '1.55rem',
+    fontSize: 'clamp(1.05rem, 4.5vw, 1.45rem)',
     fontWeight: 950,
+    lineHeight: 1.15,
     cursor: 'pointer',
     boxShadow: '0 16px 32px rgba(180,83,9,0.24)',
   },
@@ -1858,8 +2145,9 @@ const styles = {
     background: 'linear-gradient(135deg, #10b981, #047857)',
     color: 'white',
     fontFamily: burmeseFont,
-    fontSize: '1.55rem',
+    fontSize: 'clamp(1.05rem, 4.5vw, 1.45rem)',
     fontWeight: 950,
+    lineHeight: 1.15,
     cursor: 'pointer',
     boxShadow: '0 16px 32px rgba(4,120,87,0.24)',
   },
