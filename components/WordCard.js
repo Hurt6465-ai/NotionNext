@@ -1,25 +1,45 @@
 // components/WordCard.js
 
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  Component,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { animated, useTransition } from '@react-spring/web';
 import { useDrag } from '@use-gesture/react';
 import { Howl } from 'howler';
 import {
-  FaCog, FaHeart, FaHome, FaMagic, FaMicrophone, FaPenFancy, FaPlayCircle,
-  FaRandom, FaRedo, FaRegHeart, FaSave, FaSortAmountDown, FaStop,
-  FaTimesCircle, FaVolumeUp, FaChevronDown, FaChevronUp,
+  FaCog,
+  FaHeart,
+  FaHome,
+  FaMicrophone,
+  FaPenFancy,
+  FaPlayCircle,
+  FaRandom,
+  FaRedo,
+  FaRegHeart,
+  FaSortAmountDown,
+  FaStop,
+  FaTimes,
+  FaVolumeUp,
 } from 'react-icons/fa';
 import { pinyin as pinyinConverter } from 'pinyin-pro';
+import HanziModal from '@/components/HanziModal';
 
+// =================================================================================
+// Constants
+// =================================================================================
 const DB_NAME = 'ChineseLearningDB';
 const STORE_NAME = 'favoriteWords';
 const SETTINGS_KEY = 'learningWordCardSettings';
+const STYLE_ID = 'word-card-runtime-styles-v4';
 const PROGRESS_PREFIX = 'word_progress_';
-const HINT_KEY = 'word_card_gesture_hint_seen_v3';
-const STYLE_ID = 'word-card-styles-v3';
-const TTS_API = 'https://libretts.is-an.org/api/tts';
-const AUDIO_BASE = 'https://audio.886.best/chinese-vocab-audio';
+const HINT_SEEN_KEY = 'wordcard_swipe_hint_seen_v4';
 
 const DEFAULT_SETTINGS = {
   order: 'sequential',
@@ -27,919 +47,2178 @@ const DEFAULT_SETTINGS = {
   autoPlayBurmese: true,
   autoPlayExample: true,
   autoBrowse: false,
-  autoBrowseDelay: 6000,
-  voiceChinese: 'zh-CN-XiaoyouNeural',
-  voiceBurmese: 'my-MM-NilarNeural',
-  speechRateChinese: -60,
-  speechRateBurmese: -60,
-  backgroundImage: '',
+  autoBrowseDelay: 7000,
+  showChinese: true,
   showPinyin: true,
   showBurmese: true,
-  showExplanation: true,
-  showExamples: true,
-  useDedicatedSpellAudio: true,
-  ttsFallback: true,
+  showExample: true,
+  voiceChinese: 'zh-CN-XiaoxiaoNeural',
+  voiceBurmese: 'my-MM-NilarNeural',
+  speechRateChinese: -50,
+  speechRateBurmese: -50,
+  backgroundImage: '',
 };
 
 const CHINESE_VOICES = [
-  ['zh-CN-XiaoyouNeural', '晓悠 · 女孩'],
-  ['zh-CN-XiaoxiaoNeural', '晓晓 · 女声'],
-  ['zh-CN-XiaoyiNeural', '晓伊 · 女声'],
-  ['zh-CN-XiaohanNeural', '晓涵 · 女声'],
-  ['zh-CN-XiaomengNeural', '晓梦 · 女声'],
-  ['zh-CN-XiaomoNeural', '晓墨 · 女声'],
-  ['zh-CN-XiaoruiNeural', '晓睿 · 女声'],
-  ['zh-CN-XiaoshuangNeural', '晓双 · 儿童'],
-  ['zh-CN-YunxiNeural', '云希 · 男声'],
-  ['zh-CN-YunjianNeural', '云健 · 男声'],
-  ['zh-CN-YunyangNeural', '云扬 · 男声'],
-  ['zh-CN-YunfengNeural', '云枫 · 男声'],
-  ['zh-CN-YunhaoNeural', '云皓 · 男声'],
-  ['zh-CN-YunxiaNeural', '云夏 · 男孩'],
-].map(([value, label]) => ({ value, label }));
+  { value: 'zh-CN-XiaoxiaoNeural', label: '晓晓 · 女声 · 普通话' },
+  { value: 'zh-CN-XiaoyiNeural', label: '晓伊 · 女声 · 普通话' },
+  { value: 'zh-CN-XiaoyouNeural', label: '晓悠 · 儿童女声' },
+  { value: 'zh-CN-YunjianNeural', label: '云健 · 男声' },
+  { value: 'zh-CN-YunxiNeural', label: '云希 · 男声' },
+  { value: 'zh-CN-YunxiaNeural', label: '云夏 · 男声' },
+  { value: 'zh-CN-YunyangNeural', label: '云扬 · 男声' },
+  { value: 'zh-CN-XiaochenNeural', label: '晓辰 · 女声' },
+  { value: 'zh-CN-XiaochenMultilingualNeural', label: '晓辰 · 多语女声' },
+  { value: 'zh-CN-XiaohanNeural', label: '晓涵 · 女声' },
+  { value: 'zh-CN-XiaomengNeural', label: '晓梦 · 女声' },
+  { value: 'zh-CN-XiaomoNeural', label: '晓墨 · 女声' },
+  { value: 'zh-CN-XiaoqiuNeural', label: '晓秋 · 女声' },
+  { value: 'zh-CN-XiaorouNeural', label: '晓柔 · 女声' },
+  { value: 'zh-CN-XiaoruiNeural', label: '晓睿 · 女声' },
+  { value: 'zh-CN-XiaoshuangNeural', label: '晓双 · 女声' },
+  { value: 'zh-CN-XiaoxuanNeural', label: '晓萱 · 女声' },
+  { value: 'zh-CN-XiaoyanNeural', label: '晓颜 · 女声' },
+  { value: 'zh-CN-XiaozhenNeural', label: '晓甄 · 女声' },
+  { value: 'zh-CN-YunfengNeural', label: '云枫 · 男声' },
+  { value: 'zh-CN-YunhaoNeural', label: '云皓 · 男声' },
+  { value: 'zh-CN-YunqianNeural', label: '云谦 · 男声' },
+  { value: 'zh-CN-YunzeNeural', label: '云泽 · 男声' },
+  { value: 'zh-CN-liaoning-XiaobeiNeural', label: '晓北 · 辽宁女声' },
+  { value: 'zh-CN-shaanxi-XiaoniNeural', label: '晓妮 · 陕西女声' },
+  { value: 'zh-HK-HiuMaanNeural', label: '香港 · 晓曼' },
+  { value: 'zh-HK-HiuGaaiNeural', label: '香港 · 晓佳' },
+  { value: 'zh-TW-HsiaoChenNeural', label: '台湾 · 晓臻' },
+  { value: 'zh-TW-YunJheNeural', label: '台湾 · 云哲' },
+];
 
 const BURMESE_VOICES = [
-  ['my-MM-NilarNeural', 'Nilar · ဗမာ အမျိုးသမီး'],
-  ['my-MM-ThihaNeural', 'Thiha · ဗမာ အမျိုးသား'],
-].map(([value, label]) => ({ value, label }));
+  { value: 'my-MM-NilarNeural', label: 'Nilar · 女声' },
+  { value: 'my-MM-ThihaNeural', label: 'Thiha · 男声' },
+];
 
-const safeLocalStorage = {
+// =================================================================================
+// IndexedDB favorites
+// =================================================================================
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB unavailable'));
+      return;
+    }
+
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onerror = () => reject(request.error || new Error('Database error'));
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+  });
+}
+
+function waitTransaction(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('tx error'));
+    tx.onabort = () => reject(tx.error || new Error('tx abort'));
+  });
+}
+
+async function toggleFavorite(word) {
+  if (!word?.id) return false;
+
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const existing = await new Promise((resolve) => {
+      const req = store.get(word.id);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+
+    if (existing) {
+      store.delete(word.id);
+      await waitTransaction(tx);
+      db.close();
+      return false;
+    }
+
+    store.put({ ...word, favoritedAt: Date.now() });
+    await waitTransaction(tx);
+    db.close();
+    return true;
+  } catch (error) {
+    console.warn('toggleFavorite failed', error);
+    return false;
+  }
+}
+
+async function isFavorite(id) {
+  if (!id) return false;
+
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const result = await new Promise((resolve) => {
+      const req = store.get(id);
+      req.onsuccess = () => resolve(!!req.result);
+      req.onerror = () => resolve(false);
+    });
+    db.close();
+    return result;
+  } catch {
+    return false;
+  }
+}
+
+// =================================================================================
+// Utilities
+// =================================================================================
+const safeStorage = {
   get(key) {
-    try { return typeof window === 'undefined' ? null : localStorage.getItem(key); } catch { return null; }
+    try {
+      if (typeof window === 'undefined') return null;
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
   },
   set(key, value) {
-    try { if (typeof window !== 'undefined') localStorage.setItem(key, value); } catch {}
+    try {
+      if (typeof window !== 'undefined') localStorage.setItem(key, value);
+    } catch {
+      // ignore storage errors in private mode
+    }
   },
 };
 
-function getPinyinText(text) {
-  if (!text) return '';
-  try {
-    return pinyinConverter(text, { toneType: 'symbol', separator: ' ', v: true }).replace(/·/g, ' ');
-  } catch {
-    return text;
-  }
+function clamp(num, min, max) {
+  const value = Number(num);
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
 }
 
-function onlyHan(text) {
-  const m = String(text || '').match(/[\u4e00-\u9fff]/g);
-  return m ? m.join('') : '';
-}
-
-function clamp(value, min, max) {
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
-}
-
-function shuffleArray(input) {
-  const arr = [...input];
-  for (let i = arr.length - 1; i > 0; i -= 1) {
+function shuffleArray(arr) {
+  const next = [...arr];
+  for (let i = next.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    [next[i], next[j]] = [next[j], next[i]];
   }
-  return arr;
+  return next;
 }
 
 function getWordId(word, index) {
   return word?.id ?? `${word?.chinese || word?.word || 'word'}-${index}`;
 }
 
-function getRecorderMimeType() {
-  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
-  return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/mpeg'].find((t) => MediaRecorder.isTypeSupported(t)) || '';
+function normalizePinyinText(text) {
+  if (!text) return '';
+  try {
+    // NFC turns combining tone marks into precomposed characters when possible.
+    // This fixes first-tone/macron drifting on some Android browsers when letter spacing is applied.
+    return String(text).normalize('NFC');
+  } catch {
+    return String(text);
+  }
 }
 
-function getSpeechRecognition() {
-  if (typeof window === 'undefined') return null;
-  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+function getPinyinText(text) {
+  if (!text) return '';
+  try {
+    return normalizePinyinText(
+      pinyinConverter(text, {
+        toneType: 'symbol',
+        separator: ' ',
+        v: true,
+      }).replace(/·/g, ' '),
+    );
+  } catch {
+    return normalizePinyinText(text);
+  }
 }
 
-function injectStyles() {
+function normalizeRate(rate) {
+  const safeRate = Number(rate);
+  if (!Number.isFinite(safeRate)) return 1;
+  if (safeRate >= 0) return Math.min(1.8, 1 + safeRate / 100);
+  return Math.max(0.55, 1 + safeRate / 200);
+}
+
+function finishOnce(callback) {
+  let called = false;
+  return () => {
+    if (called) return;
+    called = true;
+    if (typeof callback === 'function') callback();
+  };
+}
+
+function stopEvent(event) {
+  if (!event) return;
+  event.stopPropagation?.();
+}
+
+function injectRuntimeStyles() {
   if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
+
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.innerHTML = `
-    html.word-card-open, html.word-card-open body {
-      overflow: hidden !important;
-      overscroll-behavior: none !important;
-      overscroll-behavior-y: none !important;
-      touch-action: none !important;
-      height: 100% !important;
-    }
-    .word-card-no-select, .word-card-no-select * {
+    .word-card-no-select,
+    .word-card-no-select * {
       -webkit-user-select: none !important;
       user-select: none !important;
       -webkit-touch-callout: none !important;
-      -webkit-tap-highlight-color: transparent !important;
+      -webkit-tap-highlight-color: transparent;
     }
+
     .word-card-scroll::-webkit-scrollbar { width: 0; height: 0; }
-    @keyframes wcFadeIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
-    @keyframes wcWave { 0%,100% { height: 8px; } 50% { height: 24px; } }
-    @keyframes wcRipple { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,.42); } 70% { box-shadow: 0 0 0 20px rgba(239,68,68,0); } 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); } }
-    @keyframes wcHint { 0%,100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -5px); } }
+
+    .word-card-flip-scene {
+      perspective: 1800px;
+      transform-style: preserve-3d;
+    }
+
+    .word-card-flip-inner {
+      transform-style: preserve-3d;
+      will-change: transform;
+      transition: transform 420ms cubic-bezier(.2,.8,.2,1);
+    }
+
+    .word-card-face {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+
+    .word-card-face-back { transform: rotateY(180deg); }
+
+    .word-card-pinyin,
+    .word-card-pinyin * {
+      font-family: Arial, Helvetica, "Noto Sans", sans-serif !important;
+      font-variant-ligatures: none;
+      letter-spacing: 0 !important;
+      line-height: 1.42 !important;
+      text-rendering: geometricPrecision;
+      transform: translateZ(0);
+    }
+
+    .word-card-hanzi-scope [class*="pinyin"],
+    .word-card-hanzi-scope .pinyin {
+      font-family: Arial, Helvetica, "Noto Sans", sans-serif !important;
+      font-variant-ligatures: none !important;
+      letter-spacing: 0 !important;
+      line-height: 1.45 !important;
+      text-rendering: geometricPrecision !important;
+    }
+
+    @keyframes wordCardRecordWave {
+      0%, 100% { height: 8px; }
+      50% { height: 24px; }
+    }
+
+    @keyframes wordCardRecordRipple {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+      70% { box-shadow: 0 0 0 18px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+
+    @keyframes wordCardHintFloat {
+      0%, 100% { transform: translate(-50%, 0); opacity: .95; }
+      50% { transform: translate(-50%, -5px); opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .word-card-flip-inner,
+      .word-card-animated,
+      .word-card-animated * {
+        transition-duration: 0.001ms !important;
+        animation-duration: 0.001ms !important;
+      }
+    }
   `;
   document.head.appendChild(style);
 }
 
-function setLock(enabled) {
-  if (typeof document === 'undefined') return;
-  document.documentElement.classList.toggle('word-card-open', enabled);
-  document.body.classList.toggle('word-card-no-select', enabled);
-}
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.indexedDB) return reject(new Error('IndexedDB unavailable'));
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onerror = () => reject(req.error || new Error('DB error'));
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-    };
-  });
-}
-
-function waitTx(tx) {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error || new Error('Transaction error'));
-    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
-  });
-}
-
-async function isFavorite(id) {
-  if (!id) return false;
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const req = tx.objectStore(STORE_NAME).get(id);
-    const ok = await new Promise((resolve) => { req.onsuccess = () => resolve(!!req.result); req.onerror = () => resolve(false); });
-    db.close();
-    return ok;
-  } catch { return false; }
-}
-
-async function toggleFavorite(word) {
-  if (!word?.id) return false;
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const existed = await new Promise((resolve) => {
-      const req = store.get(word.id);
-      req.onsuccess = () => resolve(!!req.result);
-      req.onerror = () => resolve(false);
-    });
-    if (existed) store.delete(word.id);
-    else store.put({ ...word, favoritedAt: Date.now() });
-    await waitTx(tx);
-    db.close();
-    return !existed;
-  } catch { return false; }
-}
-
+// =================================================================================
+// Audio manager
+// =================================================================================
+let fxSounds = null;
 let activeHowl = null;
 let activeObjectUrl = null;
-let soundEffects = null;
-let audioPlayId = 0;
+let audioPlayToken = 0;
 let spellSequenceId = 0;
 
-function finishOnce(cb) {
-  let done = false;
-  return (...args) => {
-    if (done) return;
-    done = true;
-    if (typeof cb === 'function') cb(...args);
-  };
+function initFx() {
+  if (!fxSounds && typeof window !== 'undefined') {
+    fxSounds = {
+      // Put your real file here later:
+      // public/sounds/wordcard-switch.mp3
+      switch: new Howl({
+        src: ['/sounds/wordcard-switch.mp3', '/sounds/switch-card.mp3'],
+        volume: 0.35,
+        html5: true,
+      }),
+    };
+  }
 }
 
-function revokeObjectUrl() {
+function cleanupObjectUrl() {
   if (activeObjectUrl) {
     URL.revokeObjectURL(activeObjectUrl);
     activeObjectUrl = null;
   }
 }
 
-function stopHowl() {
+function unloadActiveHowl() {
   if (activeHowl) {
-    try { activeHowl.stop(); activeHowl.unload(); } catch {}
+    try {
+      activeHowl.stop();
+      activeHowl.unload();
+    } catch {
+      // ignore teardown errors
+    }
     activeHowl = null;
   }
-  revokeObjectUrl();
+  cleanupObjectUrl();
 }
 
 function stopAllAudio({ cancelSpell = true, stopEffects = false } = {}) {
-  audioPlayId += 1;
+  audioPlayToken += 1;
   if (cancelSpell) spellSequenceId += 1;
-  stopHowl();
-  if (stopEffects && soundEffects) Object.values(soundEffects).forEach((s) => s.stop());
-  if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
-}
-
-function initSounds() {
-  if (!soundEffects && typeof window !== 'undefined') {
-    soundEffects = { switch: new Howl({ src: ['/sounds/switch-card.mp3'], volume: 0.42, html5: true }) };
+  unloadActiveHowl();
+  if (stopEffects && fxSounds) {
+    Object.values(fxSounds).forEach((sound) => sound.stop());
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
   }
 }
 
-function playSoundEffect(type) {
-  if (typeof window === 'undefined') return;
-  initSounds();
-  soundEffects?.[type]?.play();
-}
-
-function systemRate(rate) {
-  const r = Number.isFinite(Number(rate)) ? Number(rate) : -60;
-  return r >= 0 ? Math.min(1.8, 1 + r / 100) : Math.max(0.55, 1 + r / 200);
-}
-
-function voiceLang(voice) {
-  return voice?.startsWith('my-MM') ? 'my-MM' : 'zh-CN';
-}
-
-async function playTTS(text, voice, rate, onEnd, event, { cancelSpell = true, stopBeforePlay = true, fallbackToSystem = true } = {}) {
-  event?.stopPropagation?.();
-  const done = finishOnce(onEnd);
-  if (stopBeforePlay) stopAllAudio({ cancelSpell });
-  if (!text || !voice) return done(false);
-
-  const current = audioPlayId;
+function triggerSwitchFeedback() {
   try {
-    const res = await fetch(TTS_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice, rate: Math.round((Number(rate) || 0) / 2), pitch: 0 }),
-    });
-    if (!res.ok) throw new Error(`TTS ${res.status}`);
-    const blob = await res.blob();
-    if (current !== audioPlayId) return done(false);
-    activeObjectUrl = URL.createObjectURL(blob);
-    activeHowl = new Howl({
-      src: [activeObjectUrl],
-      format: ['mp3', 'mpeg'],
-      html5: true,
-      onend: () => { revokeObjectUrl(); done(true); },
-      onloaderror: () => { revokeObjectUrl(); done(false); },
-      onplayerror: () => { revokeObjectUrl(); done(false); },
-    });
-    activeHowl.play();
-  } catch (e) {
-    if (fallbackToSystem && typeof window !== 'undefined' && window.speechSynthesis) {
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = voiceLang(voice);
-      u.rate = systemRate(rate);
-      u.onend = () => done(true);
-      u.onerror = () => done(false);
-      window.speechSynthesis.speak(u);
-    } else done(false);
+    initFx();
+    fxSounds?.switch?.play();
+  } catch {
+    // sound placeholder can be missing during development
+  }
+
+  try {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(12);
+    }
+  } catch {
+    // ignore unsupported vibration
   }
 }
 
-function playUrl(url, onEnd, { cancelSpell = true, stopBeforePlay = true } = {}) {
+async function playTTS(
+  text,
+  voice,
+  rate,
+  onEnd,
+  event,
+  { stopBeforePlay = true, cancelSpell = true } = {},
+) {
+  stopEvent(event);
   const done = finishOnce(onEnd);
+
   if (stopBeforePlay) stopAllAudio({ cancelSpell });
-  if (!url) return done(false);
-  activeHowl = new Howl({
-    src: [url],
-    html5: true,
-    onend: () => done(true),
-    onloaderror: () => done(false),
-    onplayerror: () => done(false),
-  });
-  activeHowl.play();
-}
 
-function tryPlayUrl(url) {
-  return new Promise((resolve) => {
-    stopAllAudio({ cancelSpell: false });
-    const done = finishOnce((ok) => resolve(ok));
-    activeHowl = new Howl({
-      src: [url],
-      html5: true,
-      onend: () => done(true),
-      onloaderror: () => done(false),
-      onplayerror: () => done(false),
-    });
-    activeHowl.play();
-  });
-}
-
-function padAudioId(word) {
-  return word?.id ? String(word.id).padStart(4, '0') : '';
-}
-
-function wordAudioUrl(word, level) {
-  const hsk = word?.hsk_level || level;
-  const id = padAudioId(word);
-  return hsk && id ? `${AUDIO_BASE}/hsk${hsk}/${id}.mp3` : '';
-}
-
-function spellAudioCandidates(word, level) {
-  const hsk = word?.hsk_level || level;
-  const id = padAudioId(word);
-  if (!hsk || !id) return [];
-  return [
-    `${AUDIO_BASE}/spell/hsk${hsk}/${id}.mp3`,
-    `${AUDIO_BASE}/spelling/hsk${hsk}/${id}.mp3`,
-    `${AUDIO_BASE}/hsk${hsk}/spell/${id}.mp3`,
-    `${AUDIO_BASE}/hsk${hsk}/${id}-spell.mp3`,
-    `${AUDIO_BASE}/hsk${hsk}/${id}_spell.mp3`,
-  ];
-}
-
-function playR2Audio(word, onEnd, settings, level, { cancelSpell = true } = {}) {
-  const done = finishOnce(onEnd);
-  const url = wordAudioUrl(word, level);
-  if (!url) {
-    playTTS(word?.audioText || word?.chinese, settings.voiceChinese, settings.speechRateChinese, done, null, {
-      cancelSpell,
-      fallbackToSystem: settings.ttsFallback,
-    });
+  if (!text || !voice) {
+    done();
     return;
   }
-  playUrl(url, (ok) => {
-    if (ok) return done(true);
-    playTTS(word?.audioText || word?.chinese, settings.voiceChinese, settings.speechRateChinese, done, null, {
-      cancelSpell,
-      fallbackToSystem: settings.ttsFallback,
+
+  const localToken = audioPlayToken;
+  const apiUrl = 'https://libretts.is-an.org/api/tts';
+  const rateValue = Math.round((Number(rate) || 0) / 2);
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice, rate: rateValue, pitch: 0 }),
     });
-  }, { cancelSpell });
-}
 
-async function playSpellAudio(word, settings, level, onEnd) {
-  const done = finishOnce(onEnd);
-  stopAllAudio({ cancelSpell: true });
-  const current = ++spellSequenceId;
+    if (!response.ok) throw new Error(`TTS ${response.status}`);
+    const blob = await response.blob();
+    if (localToken !== audioPlayToken) {
+      done();
+      return;
+    }
 
-  if (settings.useDedicatedSpellAudio) {
-    for (const url of spellAudioCandidates(word, level)) {
-      if (spellSequenceId !== current) return;
-      const ok = await tryPlayUrl(url);
-      if (ok) return done(true);
+    const objectUrl = URL.createObjectURL(blob);
+    activeObjectUrl = objectUrl;
+
+    activeHowl = new Howl({
+      src: [objectUrl],
+      format: ['mpeg', 'mp3'],
+      html5: true,
+      onend: () => {
+        cleanupObjectUrl();
+        done();
+      },
+      onloaderror: () => {
+        cleanupObjectUrl();
+        done();
+      },
+      onplayerror: () => {
+        cleanupObjectUrl();
+        done();
+      },
+    });
+
+    activeHowl.play();
+  } catch (error) {
+    // TTS is only fallback for normal reading, HanziModal speaking, Burmese/explanations/examples.
+    // The spell button below intentionally does not use browser speech as its main path.
+    console.warn('TTS api failed, fallback to speechSynthesis', error);
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voice.startsWith('my') ? 'my-MM' : 'zh-CN';
+      utterance.rate = normalizeRate(rate);
+      utterance.onend = done;
+      utterance.onerror = done;
+      window.speechSynthesis.speak(utterance);
+    } else {
+      done();
     }
   }
-
-  if (spellSequenceId !== current) return;
-  const url = wordAudioUrl(word, level);
-  if (url) return playUrl(url, done, { cancelSpell: false });
-
-  playTTS(word?.audioText || word?.chinese, settings.voiceChinese, settings.speechRateChinese, done, null, {
-    cancelSpell: false,
-    fallbackToSystem: false,
-  });
 }
 
+function buildR2AudioSrc(word, defaultLevel) {
+  const targetLevel = word?.hsk_level || defaultLevel;
+  if (!word?.id || !targetLevel) return '';
+  const formattedId = String(word.id).padStart(4, '0');
+  return `https://audio.886.best/chinese-vocab-audio/hsk${targetLevel}/${formattedId}.mp3`;
+}
+
+function playAudioCandidates(candidates, onEnd, { cancelSpell = true } = {}) {
+  const done = finishOnce(onEnd);
+  const srcList = candidates.filter(Boolean);
+
+  if (srcList.length === 0) {
+    done();
+    return;
+  }
+
+  let index = 0;
+  const playNext = () => {
+    if (index >= srcList.length) {
+      done();
+      return;
+    }
+
+    const src = srcList[index];
+    index += 1;
+    stopAllAudio({ cancelSpell });
+
+    activeHowl = new Howl({
+      src: [src],
+      html5: true,
+      onend: done,
+      onloaderror: playNext,
+      onplayerror: playNext,
+    });
+
+    activeHowl.play();
+  };
+
+  playNext();
+}
+
+function playR2Audio(word, onEnd, settings, defaultLevel, { cancelSpell = true } = {}) {
+  const src = buildR2AudioSrc(word, defaultLevel);
+  const textToRead = word?.audioText || word?.chinese;
+
+  if (!src) {
+    playTTS(textToRead, settings.voiceChinese, settings.speechRateChinese, onEnd, null, { cancelSpell });
+    return;
+  }
+
+  playAudioCandidates([src], onEnd, { cancelSpell });
+}
+
+function buildSpellAudioCandidates(word, defaultLevel) {
+  if (!word) return [];
+
+  const targetLevel = word.hsk_level || defaultLevel;
+  const formattedId = word.id ? String(word.id).padStart(4, '0') : '';
+  const direct = [
+    word.spellAudio,
+    word.spell_audio,
+    word.spellingAudio,
+    word.pinyinAudio,
+    word.pinyin_audio,
+  ];
+
+  if (!formattedId || !targetLevel) return direct.filter(Boolean);
+
+  return [
+    ...direct,
+    // Dedicated spelling-audio placeholders. If you add the real files later, no code change is needed.
+    `https://audio.886.best/chinese-vocab-spell-audio/hsk${targetLevel}/${formattedId}.mp3`,
+    `https://audio.886.best/chinese-vocab-audio/spell/hsk${targetLevel}/${formattedId}.mp3`,
+    `https://audio.886.best/chinese-vocab-audio/hsk${targetLevel}/spell/${formattedId}.mp3`,
+    // Last fallback is the original R2 word audio, not逐字 TTS.
+    buildR2AudioSrc(word, defaultLevel),
+  ].filter(Boolean);
+}
+
+function playSpellAudio(word, onEnd, defaultLevel) {
+  playAudioCandidates(buildSpellAudioCandidates(word, defaultLevel), onEnd, { cancelSpell: true });
+}
+
+// =================================================================================
+// Settings hook
+// =================================================================================
 function useCardSettings() {
   const [settings, setSettings] = useState(() => {
-    const saved = safeLocalStorage.get(SETTINGS_KEY);
-    if (!saved) return DEFAULT_SETTINGS;
-    try { return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) }; } catch { return DEFAULT_SETTINGS; }
+    const raw = safeStorage.get(SETTINGS_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    try {
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
   });
-  useEffect(() => { safeLocalStorage.set(SETTINGS_KEY, JSON.stringify(settings)); }, [settings]);
+
+  useEffect(() => {
+    safeStorage.set(SETTINGS_KEY, JSON.stringify(settings));
+  }, [settings]);
+
   return [settings, setSettings];
 }
 
-const StrokeOrderModal = memo(({ word, settings, onClose }) => {
-  const chars = useMemo(() => [...String(word || '')].filter((c) => c.trim()), [word]);
-  const [ready, setReady] = useState(false);
-  const [speed, setSpeed] = useState(1);
-  const [speak, setSpeak] = useState(true);
-  const [showPinyin, setShowPinyin] = useState(true);
-  const [error, setError] = useState('');
-  const writers = useRef([]);
-  const boxes = useRef([]);
-
+// =================================================================================
+// Page lock: no browser pull-to-refresh, no text select while open
+// =================================================================================
+function useLockPageInteractions(enabled) {
   useEffect(() => {
-    let alive = true;
-    writers.current = [];
-    setReady(false);
-    setError('');
-    import('hanzi-writer')
-      .then((mod) => {
-        if (!alive) return;
-        const HanziWriter = mod.default || mod;
-        chars.forEach((char, i) => {
-          const box = boxes.current[i];
-          if (!box) return;
-          box.innerHTML = '';
-          writers.current[i] = HanziWriter.create(box, char, {
-            width: 132,
-            height: 132,
-            padding: 8,
-            showOutline: true,
-            showCharacter: false,
-            strokeAnimationSpeed: speed,
-            delayBetweenStrokes: 160,
-            radicalColor: '#2563eb',
-            strokeColor: '#334155',
-            outlineColor: '#e5e7eb',
-            drawingColor: '#2563eb',
-          });
-        });
-        setReady(true);
-      })
-      .catch(() => setError('未检测到 hanzi-writer，已显示大字 fallback。'));
-    return () => { alive = false; stopAllAudio(); };
-  }, [chars, speed]);
+    if (!enabled || typeof document === 'undefined') return undefined;
 
-  const speakChar = useCallback((char) => new Promise((resolve) => {
-    if (!speak) return resolve();
-    playTTS(char, settings.voiceChinese, settings.speechRateChinese, resolve, null, { fallbackToSystem: false });
-  }), [settings.speechRateChinese, settings.voiceChinese, speak]);
+    const { body, documentElement } = document;
+    const prev = {
+      bodyOverflow: body.style.overflow,
+      bodyOverscroll: body.style.overscrollBehavior,
+      bodyTouchAction: body.style.touchAction,
+      bodyUserSelect: body.style.userSelect,
+      bodyWebkitUserSelect: body.style.webkitUserSelect,
+      htmlOverscroll: documentElement.style.overscrollBehavior,
+      htmlTouchAction: documentElement.style.touchAction,
+    };
 
-  const replay = useCallback(async () => {
-    stopAllAudio();
-    for (let i = 0; i < chars.length; i += 1) {
-      await speakChar(chars[i]);
-      if (writers.current[i]) await new Promise((r) => writers.current[i].animateCharacter({ onComplete: r }));
-    }
-  }, [chars, speakChar]);
+    body.style.overflow = 'hidden';
+    body.style.overscrollBehavior = 'none';
+    body.style.touchAction = 'none';
+    body.style.userSelect = 'none';
+    body.style.webkitUserSelect = 'none';
+    documentElement.style.overscrollBehavior = 'none';
+    documentElement.style.touchAction = 'none';
 
-  const clear = () => { stopAllAudio(); writers.current.forEach((w) => w?.hideCharacter?.()); };
-  const quiz = () => { stopAllAudio(); writers.current.forEach((w) => w?.quiz?.()); };
+    const preventTouchMove = (event) => {
+      if (!event.target?.closest?.('[data-allow-native-scroll="true"]')) {
+        event.preventDefault();
+      }
+    };
 
+    document.addEventListener('touchmove', preventTouchMove, { passive: false });
+
+    return () => {
+      document.removeEventListener('touchmove', preventTouchMove);
+      body.style.overflow = prev.bodyOverflow;
+      body.style.overscrollBehavior = prev.bodyOverscroll;
+      body.style.touchAction = prev.bodyTouchAction;
+      body.style.userSelect = prev.bodyUserSelect;
+      body.style.webkitUserSelect = prev.bodyWebkitUserSelect;
+      documentElement.style.overscrollBehavior = prev.htmlOverscroll;
+      documentElement.style.touchAction = prev.htmlTouchAction;
+    };
+  }, [enabled]);
+}
+
+// =================================================================================
+// Error boundary for HanziModal
+// =================================================================================
+class HanziErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn('HanziModal crashed', error);
+  }
+
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
+function HanziFallbackModal({ word, pinyinText, onClose, onSpeakWord }) {
   return (
-    <div style={styles.modalMask} data-no-gesture="true" onClick={onClose} role="presentation">
-      <div style={styles.strokePanel} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div style={styles.strokeTitle}>汉字笔顺：{word}</div>
-        {showPinyin && <div style={styles.strokePinyin}>{getPinyinText(word)}</div>}
-        <div style={styles.strokeOptions}>
-          <button type="button" style={{ ...styles.smallPill, ...(speak ? styles.smallPillActive : {}) }} onClick={() => setSpeak((v) => !v)}>逐字发音：{speak ? '开' : '关'}</button>
-          <button type="button" style={{ ...styles.smallPill, ...(showPinyin ? styles.smallPillActive : {}) }} onClick={() => setShowPinyin((v) => !v)}>拼音：{showPinyin ? '显示' : '隐藏'}</button>
+    <div style={styles.modalOverlay} onClick={onClose} data-no-gesture="true" role="presentation">
+      <div style={styles.simpleModalPanel} onClick={stopEvent} role="dialog" aria-modal="true">
+        <div style={styles.modalTitle}>笔顺暂时无法加载</div>
+        <div style={styles.frontPinyin} className="word-card-pinyin">{pinyinText}</div>
+        <div style={styles.fallbackHanzi}>{word}</div>
+        <div style={styles.mutedInfo}>已阻止页面报错。请检查 HanziModal 或 hanzi-writer 资源。</div>
+        <div style={styles.modalActionRow}>
+          <button style={styles.secondaryPillButton} onClick={onClose}>关闭</button>
+          <button style={styles.primaryPillButton} onClick={(e) => { stopEvent(e); onSpeakWord?.(); }}>播放发音</button>
         </div>
-        <div style={styles.strokeSpeedRow}><span>速度</span><input type="range" min="0.4" max="2" step="0.1" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} /><strong>{speed.toFixed(1)}x</strong></div>
-        {error && <div style={styles.strokeError}>{error}</div>}
-        <div style={styles.strokeGrid}>
-          {chars.map((char, i) => (
-            <div style={styles.strokeCell} key={`${char}-${i}`}>
-              <div ref={(node) => { boxes.current[i] = node; }} style={styles.strokeWriterBox}>{!ready && <span style={styles.strokeFallbackChar}>{char}</span>}</div>
-            </div>
-          ))}
-        </div>
-        <div style={styles.strokeActions}>
-          <button type="button" style={styles.strokeActionButton} onClick={replay}>重播全部</button>
-          <button type="button" style={styles.strokeActionButton} onClick={clear}>清屏重练</button>
-          <button type="button" style={{ ...styles.strokeActionButton, ...styles.primaryButton }} onClick={quiz}>开始描红</button>
-        </div>
-        <button type="button" style={styles.strokeCloseButton} onClick={onClose}>关闭</button>
       </div>
     </div>
   );
-});
-StrokeOrderModal.displayName = 'StrokeOrderModal';
+}
 
-const PronunciationComparison = memo(({ word, pinyinText, settings, level, onClose }) => {
+function SafeHanziModal({ word, pinyinText, settings, onClose, onSpeakText, onSpeakWord }) {
+  return (
+    <div className="word-card-hanzi-scope" data-no-gesture="true">
+      <HanziErrorBoundary
+        fallback={(
+          <HanziFallbackModal
+            word={word}
+            pinyinText={pinyinText}
+            onClose={onClose}
+            onSpeakWord={onSpeakWord}
+          />
+        )}
+      >
+        <HanziModal
+          word={word}
+          pinyinText={pinyinText}
+          settings={settings}
+          onClose={onClose}
+          onSpeakText={onSpeakText}
+          onSpeakWord={onSpeakWord}
+          ttsVoice={settings.voiceChinese}
+          speechRate={settings.speechRateChinese}
+        />
+      </HanziErrorBoundary>
+    </div>
+  );
+}
+
+// =================================================================================
+// Recorder modal: record only, no SpeechRecognition
+// =================================================================================
+function getRecorderMimeType() {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+  const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+  return types.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+const PronunciationComparison = memo(function PronunciationComparison({
+  correctWord,
+  pinyinText,
+  settings,
+  onClose,
+}) {
   const [status, setStatus] = useState('idle');
-  const [url, setUrl] = useState(null);
-  const [playing, setPlaying] = useState(null);
-  const [error, setError] = useState('');
-  const [transcript, setTranscript] = useState('');
-  const [interim, setInterim] = useState('');
-  const [recognitionNote, setRecognitionNote] = useState('');
-  const recorderRef = useRef(null);
+  const [isPlayingType, setIsPlayingType] = useState(null);
+  const [userAudioUrl, setUserAudioUrl] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
-  const localHowl = useRef(null);
-  const urlRef = useRef(null);
-  const recognitionRef = useRef(null);
+  const localHowlRef = useRef(null);
+  const userAudioUrlRef = useRef(null);
 
   useEffect(() => () => {
-    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    localHowl.current?.unload?.();
-    recognitionRef.current?.stop?.();
+    if (userAudioUrlRef.current) URL.revokeObjectURL(userAudioUrlRef.current);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    localHowlRef.current?.unload?.();
     stopAllAudio();
   }, []);
 
-  const startRecognition = () => {
-    const Recognition = getSpeechRecognition();
-    if (!Recognition) { setRecognitionNote('当前浏览器不支持实时语音识别，不影响录音。'); return; }
-    try {
-      const r = new Recognition();
-      r.lang = 'zh-CN';
-      r.continuous = true;
-      r.interimResults = true;
-      r.maxAlternatives = 3;
-      r.onresult = (event) => {
-        let finalText = '';
-        let interimText = '';
-        for (let i = event.resultIndex; i < event.results.length; i += 1) {
-          const t = event.results[i][0]?.transcript || '';
-          if (event.results[i].isFinal) finalText += t;
-          else interimText += t;
-        }
-        if (finalText) setTranscript((prev) => `${prev}${finalText}`);
-        setInterim(interimText);
-      };
-      r.onerror = () => setRecognitionNote('语音识别被浏览器中断，不影响录音回放。');
-      recognitionRef.current = r;
-      r.start();
-      setRecognitionNote('正在同时录音和识别。');
-    } catch { setRecognitionNote('语音识别启动失败，不影响录音。'); }
-  };
-
-  const stopRecognition = () => { try { recognitionRef.current?.stop?.(); } catch {} };
-
   const startRecording = async () => {
     stopAllAudio();
-    setError(''); setTranscript(''); setInterim(''); setRecognitionNote('');
-    if (!(navigator?.mediaDevices?.getUserMedia) || typeof MediaRecorder === 'undefined') {
-      setError('您的浏览器暂不支持录音功能。'); return;
+    setErrorMessage('');
+
+    if (!(typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined')) {
+      setErrorMessage('当前浏览器不支持录音');
+      return;
     }
+
     try {
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      if (userAudioUrlRef.current) {
+        URL.revokeObjectURL(userAudioUrlRef.current);
+        userAudioUrlRef.current = null;
+        setUserAudioUrl(null);
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
       streamRef.current = stream;
       chunksRef.current = [];
+
       const mimeType = getRecorderMimeType();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      recorder.ondataavailable = (e) => { if (e.data?.size > 0) chunksRef.current.push(e.data); };
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size > 0) chunksRef.current.push(event.data);
+      };
       recorder.onstop = () => {
-        stopRecognition();
         const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
-        const nextUrl = URL.createObjectURL(blob);
-        urlRef.current = nextUrl;
-        stream.getTracks().forEach((t) => t.stop());
-        setUrl(nextUrl);
+        const url = URL.createObjectURL(blob);
+        userAudioUrlRef.current = url;
+        stream.getTracks().forEach((track) => track.stop());
+        setUserAudioUrl(url);
         setStatus('review');
       };
-      recorderRef.current = recorder;
-      recorder.start(250);
-      startRecognition();
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
       setStatus('recording');
-    } catch { setError('无法访问麦克风，请检查权限。'); }
+    } catch {
+      setErrorMessage('无法访问麦克风，请检查权限');
+    }
   };
 
   const stopRecording = () => {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-    stopRecognition();
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
   };
 
-  const reset = () => {
-    localHowl.current?.unload?.();
-    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    urlRef.current = null;
-    setUrl(null); setPlaying(null); setStatus('idle'); setError(''); setTranscript(''); setInterim(''); setRecognitionNote('');
+  const resetRecording = () => {
+    if (userAudioUrlRef.current) {
+      URL.revokeObjectURL(userAudioUrlRef.current);
+      userAudioUrlRef.current = null;
+    }
+    setUserAudioUrl(null);
+    setErrorMessage('');
+    setStatus('idle');
+    setIsPlayingType(null);
   };
 
-  const playStandard = () => { localHowl.current?.stop?.(); setPlaying('standard'); playR2Audio(word, () => setPlaying(null), settings, level); };
+  const playStandard = () => {
+    localHowlRef.current?.stop?.();
+    setIsPlayingType('standard');
+    playTTS(correctWord, settings.voiceChinese, settings.speechRateChinese, () => setIsPlayingType(null));
+  };
+
   const playUser = () => {
-    if (!url) return;
-    stopAllAudio(); setPlaying('user'); localHowl.current?.unload?.();
-    localHowl.current = new Howl({ src: [url], html5: true, onend: () => setPlaying(null), onloaderror: () => setPlaying(null), onplayerror: () => setPlaying(null) });
-    localHowl.current.play();
+    if (!userAudioUrl) return;
+    stopAllAudio();
+    setIsPlayingType('user');
+    localHowlRef.current?.unload?.();
+    localHowlRef.current = new Howl({
+      src: [userAudioUrl],
+      html5: true,
+      onend: () => setIsPlayingType(null),
+      onloaderror: () => setIsPlayingType(null),
+      onplayerror: () => setIsPlayingType(null),
+    });
+    localHowlRef.current.play();
   };
-
-  const recognized = `${transcript}${interim}`.trim();
-  const hit = onlyHan(recognized) && onlyHan(word?.chinese) ? (onlyHan(recognized).includes(onlyHan(word.chinese)) || onlyHan(word.chinese).includes(onlyHan(recognized))) : false;
 
   return (
-    <div style={styles.modalMask} data-no-gesture="true" onClick={onClose} role="presentation">
-      <div style={styles.recordPanel} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div style={styles.recordHeader}><h3 style={styles.recordTitle}>发音跟读对比</h3><button type="button" style={styles.textCloseButton} onClick={onClose}>关闭</button></div>
-        <div style={styles.recordBody}>
-          <div style={styles.recordWord}><div style={styles.modalPinyin}>{pinyinText}</div><div style={styles.modalChinese}>{word?.chinese}</div></div>
-          {status === 'idle' && <div style={styles.recordCenter}><button type="button" style={styles.bigRecordBtn} onClick={startRecording}><FaMicrophone size={32} /></button><div style={styles.instruction}>点击开始录音，并同步语音识别</div>{error && <div style={styles.errorText}>{error}</div>}</div>}
-          {status === 'recording' && <div style={styles.recordCenter}><div style={styles.waveBox}><i style={styles.waveBar} /><i style={{ ...styles.waveBar, animationDelay: '.2s' }} /><i style={{ ...styles.waveBar, animationDelay: '.4s' }} /><i style={{ ...styles.waveBar, animationDelay: '.1s' }} /></div><button type="button" style={{ ...styles.bigRecordBtn, ...styles.recordingPulse }} onClick={stopRecording}><FaStop size={32} /></button><div style={{ ...styles.instruction, color: '#ef4444' }}>录音中...点击停止</div>{(recognized || recognitionNote) && <div style={styles.recognitionBox}><b>识别：</b>{recognized || recognitionNote}</div>}</div>}
-          {status === 'review' && <div style={styles.reviewBox}><div style={styles.reviewRow}><button type="button" style={{ ...styles.reviewCard, border: playing === 'standard' ? '2px solid #3b82f6' : '1px solid #e5e7eb' }} onClick={playStandard}><span style={{ ...styles.iconCircle, background: playing === 'standard' ? '#3b82f6' : '#f3f4f6', color: playing === 'standard' ? '#fff' : '#64748b' }}><FaVolumeUp /></span><b>标准音频</b></button><button type="button" style={{ ...styles.reviewCard, border: playing === 'user' ? '2px solid #10b981' : '1px solid #e5e7eb' }} onClick={playUser}><span style={{ ...styles.iconCircle, background: playing === 'user' ? '#10b981' : '#f3f4f6', color: playing === 'user' ? '#fff' : '#64748b' }}><FaPlayCircle /></span><b>我的发音</b></button></div>{(recognized || recognitionNote) && <div style={{ ...styles.recognitionBox, ...(hit ? styles.recognitionGood : {}) }}><b>识别结果：</b>{recognized || recognitionNote}{hit ? ' · 命中' : ''}</div>}<button type="button" style={styles.retryButton} onClick={reset}><FaRedo size={14} /> 重新录音</button></div>}
+    <div style={styles.modalOverlay} onClick={onClose} data-no-gesture="true" role="presentation">
+      <div style={styles.recordPanel} onClick={stopEvent} role="dialog" aria-modal="true">
+        <div style={styles.modalHeaderLine}>
+          <h3 style={styles.recordTitle}>发音跟读对比</h3>
+          <button style={styles.smallIconButton} onClick={onClose} aria-label="关闭"><FaTimes /></button>
+        </div>
+
+        <div style={styles.recordWordDisplay}>
+          <div style={styles.compPinyin} className="word-card-pinyin">{pinyinText}</div>
+          <div style={styles.compChinese}>{correctWord}</div>
+        </div>
+
+        {status === 'idle' && (
+          <div style={styles.idleStateContainer}>
+            <button style={styles.bigRecordBtn} onClick={startRecording}>
+              <FaMicrophone size={30} />
+            </button>
+            <div style={styles.instructionText}>点击开始录音</div>
+            <div style={styles.mutedInfo}>仅录音，不启用语音识别，避免浏览器冲突。</div>
+            {errorMessage && <div style={styles.errorText}>{errorMessage}</div>}
+          </div>
+        )}
+
+        {status === 'recording' && (
+          <div style={styles.idleStateContainer}>
+            <div style={styles.waveformContainer}>
+              <div style={styles.waveBar} />
+              <div style={{ ...styles.waveBar, animationDelay: '0.2s' }} />
+              <div style={{ ...styles.waveBar, animationDelay: '0.4s' }} />
+              <div style={{ ...styles.waveBar, animationDelay: '0.1s' }} />
+            </div>
+            <button style={{ ...styles.bigRecordBtn, ...styles.recordingPulse }} onClick={stopRecording}>
+              <FaStop size={30} />
+            </button>
+            <div style={styles.instructionText}>录音中... 点击停止</div>
+          </div>
+        )}
+
+        {status === 'review' && (
+          <div style={styles.reviewContainer}>
+            <div style={styles.reviewRow}>
+              <button
+                style={{
+                  ...styles.reviewCard,
+                  border: isPlayingType === 'standard' ? '2px solid #3b82f6' : '1px solid rgba(148,163,184,0.25)',
+                }}
+                onClick={playStandard}
+              >
+                <div style={{ ...styles.reviewCircle, background: isPlayingType === 'standard' ? '#3b82f6' : 'rgba(59,130,246,0.12)' }}>
+                  <FaVolumeUp size={18} color={isPlayingType === 'standard' ? '#fff' : '#2563eb'} />
+                </div>
+                <div style={styles.reviewCardText}>标准发音</div>
+              </button>
+
+              <button
+                style={{
+                  ...styles.reviewCard,
+                  border: isPlayingType === 'user' ? '2px solid #14b8a6' : '1px solid rgba(148,163,184,0.25)',
+                }}
+                onClick={playUser}
+              >
+                <div style={{ ...styles.reviewCircle, background: isPlayingType === 'user' ? '#14b8a6' : 'rgba(20,184,166,0.12)' }}>
+                  <FaPlayCircle size={18} color={isPlayingType === 'user' ? '#fff' : '#0f766e'} />
+                </div>
+                <div style={styles.reviewCardText}>我的录音</div>
+              </button>
+            </div>
+
+            <div style={styles.modalActionRow}>
+              <button style={styles.secondaryPillButton} onClick={resetRecording}>
+                <FaRedo size={14} /> 重新录音
+              </button>
+              <button style={styles.primaryPillButton} onClick={onClose}>完成</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// =================================================================================
+// Settings panel: cancel/save at bottom, no top X
+// =================================================================================
+const SettingsPanel = memo(function SettingsPanel({ settings, onCancel, onSave }) {
+  const [draft, setDraft] = useState(settings);
+
+  useEffect(() => {
+    setDraft(settings);
+  }, [settings]);
+
+  const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => update('backgroundImage', loadEvent.target?.result || '');
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div style={styles.settingsOverlay} onClick={onCancel} data-no-gesture="true" role="presentation">
+      <div style={styles.settingsPanel} onClick={stopEvent} role="dialog" aria-modal="true">
+        <div style={styles.settingsHeader}>
+          <h3 style={styles.settingsTitle}>学习设置</h3>
+          <div style={styles.mutedInfo}>点击底部“保存”后生效</div>
+        </div>
+
+        <div style={styles.settingsBody} className="word-card-scroll" data-allow-native-scroll="true">
+          <div style={styles.settingGroup}>
+            <div style={styles.settingLabel}>显示内容</div>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showChinese} onChange={(e) => update('showChinese', e.target.checked)} /> 中文</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showPinyin} onChange={(e) => update('showPinyin', e.target.checked)} /> 拼音</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showBurmese} onChange={(e) => update('showBurmese', e.target.checked)} /> 缅文</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.showExample} onChange={(e) => update('showExample', e.target.checked)} /> 例句</label>
+          </div>
+
+          <div style={styles.settingGroup}>
+            <div style={styles.settingLabel}>单词顺序</div>
+            <div style={styles.toggleRow}>
+              <button
+                type="button"
+                style={{ ...styles.segmentButton, ...(draft.order === 'sequential' ? styles.segmentActive : {}) }}
+                onClick={() => update('order', 'sequential')}
+              >
+                <FaSortAmountDown /> 顺序
+              </button>
+              <button
+                type="button"
+                style={{ ...styles.segmentButton, ...(draft.order === 'random' ? styles.segmentActive : {}) }}
+                onClick={() => update('order', 'random')}
+              >
+                <FaRandom /> 随机
+              </button>
+            </div>
+          </div>
+
+          <div style={styles.settingGroup}>
+            <div style={styles.settingLabel}>自动播放</div>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayChinese} onChange={(e) => update('autoPlayChinese', e.target.checked)} /> 中文音频</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayBurmese} onChange={(e) => update('autoPlayBurmese', e.target.checked)} /> 缅文 TTS</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoPlayExample} onChange={(e) => update('autoPlayExample', e.target.checked)} /> 例句 TTS</label>
+            <label style={styles.checkboxRow}><input type="checkbox" checked={draft.autoBrowse} onChange={(e) => update('autoBrowse', e.target.checked)} /> 自动切卡</label>
+            {draft.autoBrowse && (
+              <div style={styles.sliderGroup}>
+                <div style={styles.sliderLabelRow}>
+                  <span>自动切卡延迟</span>
+                  <strong>{Math.round(clamp(draft.autoBrowseDelay, 3000, 20000) / 1000)}s</strong>
+                </div>
+                <input type="range" min="3000" max="20000" step="500" value={clamp(draft.autoBrowseDelay, 3000, 20000)} onChange={(e) => update('autoBrowseDelay', Number(e.target.value))} />
+              </div>
+            )}
+          </div>
+
+          <div style={styles.settingGroup}>
+            <div style={styles.settingLabel}>中文发音人</div>
+            <select style={styles.select} value={draft.voiceChinese} onChange={(e) => update('voiceChinese', e.target.value)}>
+              {CHINESE_VOICES.map((voice) => <option key={voice.value} value={voice.value}>{voice.label}</option>)}
+            </select>
+            <div style={styles.sliderGroup}>
+              <div style={styles.sliderLabelRow}><span>中文语速</span><strong>{normalizeRate(draft.speechRateChinese).toFixed(2)}x</strong></div>
+              <input type="range" min="-80" max="50" step="5" value={draft.speechRateChinese} onChange={(e) => update('speechRateChinese', Number(e.target.value))} />
+            </div>
+          </div>
+
+          <div style={styles.settingGroup}>
+            <div style={styles.settingLabel}>缅文发音人</div>
+            <select style={styles.select} value={draft.voiceBurmese} onChange={(e) => update('voiceBurmese', e.target.value)}>
+              {BURMESE_VOICES.map((voice) => <option key={voice.value} value={voice.value}>{voice.label}</option>)}
+            </select>
+            <div style={styles.sliderGroup}>
+              <div style={styles.sliderLabelRow}><span>缅文语速</span><strong>{normalizeRate(draft.speechRateBurmese).toFixed(2)}x</strong></div>
+              <input type="range" min="-80" max="50" step="5" value={draft.speechRateBurmese} onChange={(e) => update('speechRateBurmese', Number(e.target.value))} />
+            </div>
+          </div>
+
+          <div style={styles.settingGroup}>
+            <div style={styles.settingLabel}>背景图</div>
+            <div style={styles.toggleRow}>
+              <label style={styles.segmentButton}>
+                上传图片
+                <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+              </label>
+              <button type="button" style={styles.segmentButton} onClick={() => update('backgroundImage', '')}>恢复渐变</button>
+            </div>
+          </div>
+        </div>
+
+        <div style={styles.settingsFooter}>
+          <button type="button" style={styles.settingsCancelBtn} onClick={onCancel}>取消</button>
+          <button type="button" style={styles.settingsSaveBtn} onClick={() => onSave(draft)}>保存</button>
         </div>
       </div>
     </div>
   );
 });
-PronunciationComparison.displayName = 'PronunciationComparison';
 
-const Toggle = memo(({ checked, onChange, label, desc }) => (
-  <label style={styles.switchLabel}>
-    <span>{label}{desc && <small style={styles.switchDesc}>{desc}</small>}</span>
-    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={styles.hidden} />
-    <span style={{ ...styles.switchTrack, background: checked ? '#3b82f6' : '#d1d5db' }}><span style={{ ...styles.switchThumb, transform: checked ? 'translateX(22px)' : 'translateX(0)' }} /></span>
-  </label>
-));
-Toggle.displayName = 'Toggle';
+// =================================================================================
+// Jump modal
+// =================================================================================
+function JumpModal({ max, current, onJump, onClose }) {
+  const [value, setValue] = useState(current + 1);
+  const inputRef = useRef(null);
 
-const SettingsPanel = memo(({ settings, onSave, onCancel }) => {
-  const [draft, setDraft] = useState(settings);
-  const fileRef = useRef(null);
-  const set = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
-  const upload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => set('backgroundImage', ev.target.result || '');
-    reader.readAsDataURL(file);
+  useEffect(() => {
+    const timer = setTimeout(() => inputRef.current?.focus(), 120);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const confirm = () => {
+    const num = parseInt(value, 10);
+    if (num >= 1 && num <= max) onJump(num - 1);
   };
+
   return (
-    <div style={styles.modalMask} data-no-gesture="true" onClick={onCancel} role="presentation">
-      <div style={styles.settingsPanel} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <h2 style={styles.settingsTitle}>设置</h2>
-        <div style={styles.settingGroup}><label style={styles.settingLabel}>顺序</label><div style={styles.segment}><button type="button" onClick={() => set('order', 'sequential')} style={{ ...styles.segmentBtn, ...(draft.order === 'sequential' ? styles.segmentActive : {}) }}><FaSortAmountDown /> 顺序</button><button type="button" onClick={() => set('order', 'random')} style={{ ...styles.segmentBtn, ...(draft.order === 'random' ? styles.segmentActive : {}) }}><FaRandom /> 随机</button></div></div>
-        <div style={styles.settingGroup}><label style={styles.settingLabel}>显示</label><div style={styles.stack}><Toggle checked={draft.showPinyin} onChange={(v) => set('showPinyin', v)} label="中文拼音" /><Toggle checked={draft.showBurmese} onChange={(v) => set('showBurmese', v)} label="缅文释义" /><Toggle checked={draft.showExplanation} onChange={(v) => set('showExplanation', v)} label="缅文解释" /><Toggle checked={draft.showExamples} onChange={(v) => set('showExamples', v)} label="中文例句" /></div></div>
-        <div style={styles.settingGroup}><label style={styles.settingLabel}>自动播放</label><div style={styles.stack}><Toggle checked={draft.autoPlayChinese} onChange={(v) => set('autoPlayChinese', v)} label="中文" /><Toggle checked={draft.autoPlayBurmese} onChange={(v) => set('autoPlayBurmese', v)} label="缅文" /><Toggle checked={draft.autoPlayExample} onChange={(v) => set('autoPlayExample', v)} label="例句" /><Toggle checked={draft.autoBrowse} onChange={(v) => set('autoBrowse', v)} label="自动切卡" /></div><div style={styles.rangeRow}><span>切卡延迟</span><input type="range" min="2500" max="15000" step="500" value={draft.autoBrowseDelay} onChange={(e) => set('autoBrowseDelay', Number(e.target.value))} /><b>{Math.round(draft.autoBrowseDelay / 1000)}s</b></div></div>
-        <div style={styles.settingGroup}><label style={styles.settingLabel}>中文发音人</label><select style={styles.select} value={draft.voiceChinese} onChange={(e) => set('voiceChinese', e.target.value)}>{CHINESE_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}</select><div style={styles.rangeRow}><span>中文速度</span><input type="range" min="-90" max="60" step="5" value={draft.speechRateChinese} onChange={(e) => set('speechRateChinese', Number(e.target.value))} /><b>{draft.speechRateChinese}</b></div></div>
-        <div style={styles.settingGroup}><label style={styles.settingLabel}>缅文发音人</label><select style={styles.select} value={draft.voiceBurmese} onChange={(e) => set('voiceBurmese', e.target.value)}>{BURMESE_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}</select><div style={styles.rangeRow}><span>缅文速度</span><input type="range" min="-90" max="60" step="5" value={draft.speechRateBurmese} onChange={(e) => set('speechRateBurmese', Number(e.target.value))} /><b>{draft.speechRateBurmese}</b></div></div>
-        <div style={styles.settingGroup}><label style={styles.settingLabel}>拼读音频</label><div style={styles.stack}><Toggle checked={draft.useDedicatedSpellAudio} onChange={(v) => set('useDedicatedSpellAudio', v)} label="优先 R2 专用拼读音频" desc="找不到时回退到 R2 单词音频" /><Toggle checked={draft.ttsFallback} onChange={(v) => set('ttsFallback', v)} label="音频缺失时允许自家 TTS 兜底" /></div></div>
-        <div style={styles.settingGroup}><label style={styles.settingLabel}>背景</label><div style={styles.settingBtns}><input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={upload} /><button type="button" style={styles.grayButton} onClick={() => fileRef.current?.click()}>上传图片</button><button type="button" style={styles.grayButton} onClick={() => set('backgroundImage', '')}>重置</button></div></div>
-        <div style={styles.settingsFooter}><button type="button" style={styles.cancelButton} onClick={onCancel}><FaTimesCircle /> 取消</button><button type="button" style={styles.saveButton} onClick={() => onSave(draft)}><FaSave /> 保存</button></div>
+    <div style={styles.settingsOverlay} onClick={onClose} data-no-gesture="true" role="presentation">
+      <div style={styles.jumpPanel} onClick={stopEvent} role="dialog" aria-modal="true">
+        <div style={styles.settingsTitle}>跳转到</div>
+        <input
+          ref={inputRef}
+          type="number"
+          value={value}
+          min="1"
+          max={max}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter') confirm(); }}
+          style={styles.jumpInput}
+        />
+        <div style={styles.modalActionRow}>
+          <button type="button" style={styles.secondaryPillButton} onClick={onClose}>取消</button>
+          <button type="button" style={styles.primaryPillButton} onClick={confirm}>确定</button>
+        </div>
       </div>
     </div>
   );
-});
-SettingsPanel.displayName = 'SettingsPanel';
+}
 
-const JumpModal = memo(({ max, current, onJump, onClose }) => {
-  const [value, setValue] = useState(current + 1);
-  const inputRef = useRef(null);
-  useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 80); return () => clearTimeout(t); }, []);
-  const go = () => { const n = parseInt(value, 10); if (n >= 1 && n <= max) onJump(n - 1); };
-  return <div style={styles.modalMask} data-no-gesture="true" onClick={onClose} role="presentation"><div style={styles.jumpPanel} onClick={(e) => e.stopPropagation()}><h3 style={{ marginTop: 0 }}>跳转到</h3><input ref={inputRef} type="number" min="1" max={max} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); if (e.key === 'Escape') onClose(); }} style={styles.jumpInput} /><button type="button" style={styles.jumpButton} onClick={go}>Go</button></div></div>;
-});
-JumpModal.displayName = 'JumpModal';
-
-const WordCard = ({ words = [], isOpen, onClose, progressKey = 'default', level }) => {
+// =================================================================================
+// Main component
+// =================================================================================
+export default function WordCard({ words = [], isOpen, onClose, progressKey = 'default', level }) {
   const [isMounted, setIsMounted] = useState(false);
   const [settings, setSettings] = useCardSettings();
   const [activeCards, setActiveCards] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isRevealed, setIsRevealed] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRecordingOpen, setIsRecordingOpen] = useState(false);
-  const [writerChar, setWriterChar] = useState(null);
+  const [writerWord, setWriterWord] = useState(null);
   const [isFavoriteCard, setIsFavoriteCard] = useState(false);
   const [isJumping, setIsJumping] = useState(false);
-  const [showHint, setShowHint] = useState(false);
-  const autoTimer = useRef(null);
-  const lastDirection = useRef(1);
-  const isOpenRef = useRef(isOpen);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+  const [isSpellPlaying, setIsSpellPlaying] = useState(false);
 
-  useEffect(() => { setIsMounted(true); injectStyles(); }, []);
-  useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
+  const autoBrowseTimerRef = useRef(null);
 
-  const getPinyin = useCallback((word) => word?.pinyin || getPinyinText(word?.chinese), []);
+  useLockPageInteractions(isOpen);
+
+  useEffect(() => {
+    injectRuntimeStyles();
+    setIsMounted(true);
+    return () => stopAllAudio({ stopEffects: true });
+  }, []);
+
   const processedCards = useMemo(() => {
-    const mapped = (Array.isArray(words) ? words : []).map((w, i) => ({
-      id: getWordId(w, i), hsk_level: w.hsk_level, chinese: w.chinese || w.word || '', audioText: w.audioText || w.chinese || w.word || '', pinyin: w.pinyin || '', burmese: w.burmese || w.meaning || '', explanation: w.explanation || '', mnemonic: w.mnemonic || '', example: w.example || '', example2: w.example2 || '',
-    })).filter((w) => w.chinese);
+    const mapped = words
+      .map((word, index) => ({
+        id: getWordId(word, index),
+        hsk_level: word.hsk_level,
+        chinese: word.chinese || word.word,
+        audioText: word.audioText || word.chinese || word.word,
+        pinyin: normalizePinyinText(word.pinyin),
+        burmese: word.burmese || word.meaning,
+        explanation: word.explanation,
+        mnemonic: word.mnemonic,
+        example: word.example,
+        example2: word.example2,
+        spellAudio: word.spellAudio || word.spell_audio || word.spellingAudio || word.pinyinAudio || word.pinyin_audio,
+      }))
+      .filter((word) => word.chinese);
+
     return settings.order === 'random' ? shuffleArray(mapped) : mapped;
   }, [words, settings.order]);
 
-  const currentCard = activeCards.length ? activeCards[currentIndex] : null;
-  const hideHint = useCallback(() => { if (showHint) { setShowHint(false); safeLocalStorage.set(HINT_KEY, '1'); } }, [showHint]);
-  const close = useCallback(() => { stopAllAudio(); setIsSettingsOpen(false); setIsRecordingOpen(false); setIsJumping(false); setWriterChar(null); setLock(false); onClose?.(); }, [onClose]);
+  useEffect(() => {
+    const initialCards = processedCards.length > 0 ? processedCards : [{ id: 'fallback', chinese: '...', burmese: '...' }];
+    setActiveCards(initialCards);
 
-  const navigate = useCallback((direction) => {
-    if (!activeCards.length) return;
-    hideHint(); stopAllAudio(); lastDirection.current = direction; setIsRevealed(false);
-    setCurrentIndex((prev) => (prev + direction + activeCards.length) % activeCards.length);
-  }, [activeCards.length, hideHint]);
+    const savedIndex = parseInt(safeStorage.get(`${PROGRESS_PREFIX}${progressKey}`) || '0', 10);
+    if (Number.isFinite(savedIndex) && savedIndex >= 0 && savedIndex < initialCards.length) setCurrentIndex(savedIndex);
+    else setCurrentIndex(0);
+  }, [processedCards, progressKey]);
 
   useEffect(() => {
-    if (!isOpen) { stopAllAudio(); setLock(false); return; }
-    setLock(true);
-    setShowHint(safeLocalStorage.get(HINT_KEY) !== '1');
-    setActiveCards(processedCards);
-    const saved = safeLocalStorage.get(`${PROGRESS_PREFIX}${progressKey}`);
-    const parsed = parseInt(saved, 10);
-    setCurrentIndex(!Number.isNaN(parsed) && parsed >= 0 && parsed < processedCards.length ? parsed : 0);
-  }, [isOpen, processedCards, progressKey]);
+    if (activeCards.length > 0) {
+      safeStorage.set(`${PROGRESS_PREFIX}${progressKey}`, String(currentIndex));
+    }
+  }, [currentIndex, activeCards.length, progressKey]);
 
   useEffect(() => {
-    if (isOpen && progressKey && activeCards.length) safeLocalStorage.set(`${PROGRESS_PREFIX}${progressKey}`, String(currentIndex));
-  }, [currentIndex, progressKey, activeCards.length, isOpen]);
+    if (!isOpen) return;
+    const seen = safeStorage.get(HINT_SEEN_KEY) === '1';
+    setShowSwipeHint(!seen);
+  }, [isOpen]);
+
+  const currentCard = activeCards[currentIndex] || null;
 
   useEffect(() => {
     let alive = true;
-    if (currentCard?.id) isFavorite(currentCard.id).then((ok) => { if (alive) setIsFavoriteCard(ok); });
-    else setIsFavoriteCard(false);
-    setIsRevealed(false);
-    return () => { alive = false; };
-  }, [currentCard?.id]);
+    setIsFlipped(false);
+    setIsSpellPlaying(false);
 
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    const preventTouch = (e) => { if (isOpenRef.current && !e.target?.closest?.('[data-no-prevent-touch]') && !e.target?.closest?.('[data-no-gesture]')) e.preventDefault(); };
-    const onKey = (e) => { if (e.key === 'Escape') close(); if (e.key === 'ArrowUp') navigate(-1); if (e.key === 'ArrowDown') navigate(1); if (e.key === ' ') { e.preventDefault(); setIsRevealed((v) => !v); } };
-    document.addEventListener('touchmove', preventTouch, { passive: false });
-    window.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('touchmove', preventTouch); window.removeEventListener('keydown', onKey); setLock(false); };
-  }, [isOpen, close, navigate]);
+    if (currentCard?.id && currentCard.id !== 'fallback') {
+      isFavorite(currentCard.id).then((result) => { if (alive) setIsFavoriteCard(result); });
+    } else {
+      setIsFavoriteCard(false);
+    }
+
+    return () => { alive = false; };
+  }, [currentCard]);
+
+  const getPinyin = useCallback((card) => card?.pinyin || getPinyinText(card?.chinese), []);
+
+  const markHintSeen = useCallback(() => {
+    setShowSwipeHint(false);
+    safeStorage.set(HINT_SEEN_KEY, '1');
+  }, []);
+
+  const navigate = useCallback((direction) => {
+    if (activeCards.length === 0) return;
+    stopAllAudio();
+    triggerSwitchFeedback();
+    markHintSeen();
+    setIsFlipped(false);
+    setCurrentIndex((prev) => (prev + direction + activeCards.length) % activeCards.length);
+  }, [activeCards.length, markHintSeen]);
+
+  const jumpToCard = useCallback((index) => {
+    if (index < 0 || index >= activeCards.length) return;
+    stopAllAudio();
+    triggerSwitchFeedback();
+    markHintSeen();
+    setIsFlipped(false);
+    setCurrentIndex(index);
+    setIsJumping(false);
+  }, [activeCards.length, markHintSeen]);
+
+  const handleSpellRead = useCallback((event) => {
+    stopEvent(event);
+    if (!currentCard?.chinese) return;
+
+    setIsSpellPlaying(true);
+    spellSequenceId += 1;
+    playSpellAudio(currentCard, () => setIsSpellPlaying(false), level);
+  }, [currentCard, level]);
+
+  const handleGoHome = (event) => {
+    stopEvent(event);
+    window.location.href = 'https://886.best';
+  };
+
+  const handleToggleFavorite = async (event) => {
+    stopEvent(event);
+    if (!currentCard || currentCard.id === 'fallback') return;
+    const optimistic = !isFavoriteCard;
+    setIsFavoriteCard(optimistic);
+    const result = await toggleFavorite(currentCard);
+    if (result !== optimistic) setIsFavoriteCard(result);
+  };
+
+  const handleKnow = (event) => {
+    stopEvent(event);
+    stopAllAudio();
+    if (!currentCard) return;
+
+    const nextCards = activeCards.filter((card) => card.id !== currentCard.id);
+    if (nextCards.length === 0) {
+      setActiveCards([]);
+      return;
+    }
+
+    triggerSwitchFeedback();
+    setActiveCards(nextCards);
+    setIsFlipped(false);
+    if (currentIndex >= nextCards.length) setCurrentIndex(0);
+  };
+
+  const handleDontKnow = (event) => {
+    stopEvent(event);
+    stopAllAudio();
+    if (isFlipped) navigate(1);
+    else setIsFlipped(true);
+  };
+
+  const handleCardClick = (event) => {
+    if (event.target.closest('[data-no-flip="true"]')) return;
+    markHintSeen();
+    setIsFlipped((prev) => !prev);
+  };
+
+  const bind = useDrag(
+    ({ down, movement: [mx, my], velocity, event }) => {
+      if (event.target.closest('[data-no-gesture="true"]')) return;
+      if (down) return;
+
+      event.stopPropagation();
+      const absX = Math.abs(mx);
+      const absY = Math.abs(my);
+
+      if (absX > absY) {
+        if (absX > 80 || (velocity[0] > 0.45 && absX > 35)) {
+          markHintSeen();
+          stopAllAudio();
+          onClose();
+        }
+        return;
+      }
+
+      if (absY > 60 || (velocity[1] > 0.42 && absY > 28)) {
+        navigate(my < 0 ? 1 : -1);
+      }
+    },
+    {
+      filterTaps: true,
+      preventDefault: true,
+      threshold: 8,
+      pointer: { touch: true },
+    },
+  );
 
   useEffect(() => {
     if (!isOpen || !currentCard) return undefined;
-    clearTimeout(autoTimer.current);
+    clearTimeout(autoBrowseTimerRef.current);
     stopAllAudio();
-    const startTimer = () => {
-      if (settings.autoBrowse && activeCards.length > 1) autoTimer.current = setTimeout(() => navigate(1), clamp(settings.autoBrowseDelay, 2500, 15000));
-    };
-    const afterChinese = () => {
-      if (settings.autoPlayBurmese && settings.showBurmese && currentCard.burmese && isRevealed) {
-        playTTS(currentCard.burmese, settings.voiceBurmese, settings.speechRateBurmese, () => {
-          if (settings.autoPlayExample && settings.showExamples && currentCard.example && isRevealed) {
-            playTTS(currentCard.example, settings.voiceChinese, settings.speechRateChinese, () => {
-              if (currentCard.example2 && isRevealed) playTTS(currentCard.example2, settings.voiceChinese, settings.speechRateChinese, startTimer);
-              else startTimer();
-            });
-          } else startTimer();
-        });
-      } else startTimer();
-    };
-    const t = setTimeout(() => {
-      if (settings.autoPlayChinese && currentCard.chinese) playR2Audio(currentCard, afterChinese, settings, level);
-      else afterChinese();
-    }, 450);
-    return () => { clearTimeout(t); clearTimeout(autoTimer.current); };
-  }, [activeCards.length, currentCard, currentIndex, isOpen, isRevealed, level, navigate, settings]);
 
-  const toggleFav = async (e) => {
-    e?.stopPropagation?.(); e?.preventDefault?.();
-    if (!currentCard) return;
-    const optimistic = !isFavoriteCard;
-    setIsFavoriteCard(optimistic);
-    setIsFavoriteCard(await toggleFavorite(currentCard));
-  };
-  const goHome = (e) => { e?.stopPropagation?.(); stopAllAudio(); if (typeof window !== 'undefined') window.location.assign('https://886.best'); };
-  const openRecorder = (e) => { e?.stopPropagation?.(); stopAllAudio(); setIsRecordingOpen(true); };
-  const spellRead = (e) => { e?.stopPropagation?.(); if (!currentCard) return; hideHint(); playSpellAudio(currentCard, settings, level); };
-  const know = () => { stopAllAudio(); if (!currentCard) return; const next = activeCards.filter((c) => c.id !== currentCard.id); setActiveCards(next); setIsRevealed(false); setCurrentIndex((prev) => (next.length && prev >= next.length ? 0 : prev)); };
-  const dontKnow = () => { stopAllAudio(); if (isRevealed) navigate(1); else setIsRevealed(true); };
-  const playManual = (card, e) => { e?.stopPropagation?.(); playR2Audio(card, null, settings, level); };
-  const tapCard = (e) => { if (e?.target?.closest?.('[data-no-gesture]')) return; if (!isSettingsOpen && !isRecordingOpen && !isJumping && !writerChar) { stopAllAudio(); setIsRevealed((v) => !v); } };
-  const jumpTo = (index) => { if (index >= 0 && index < activeCards.length) { hideHint(); stopAllAudio(); lastDirection.current = index > currentIndex ? 1 : -1; setIsRevealed(false); setCurrentIndex(index); } setIsJumping(false); };
+    const startAutoBrowse = () => {
+      if (settings.autoBrowse) {
+        autoBrowseTimerRef.current = setTimeout(() => navigate(1), clamp(settings.autoBrowseDelay, 3000, 20000));
+      }
+    };
 
-  const pageTransitions = useTransition(isOpen, { from: { opacity: 0, transform: 'translateY(100%)' }, enter: { opacity: 1, transform: 'translateY(0%)' }, leave: { opacity: 0, transform: 'translateY(100%)' }, config: { tension: 220, friction: 25 } });
-  const cardTransitions = useTransition(currentIndex, {
-    key: currentCard ? currentCard.id : currentIndex,
-    from: { opacity: 0, transform: `translate3d(0, ${lastDirection.current > 0 ? '100%' : '-100%'}, 0) scale(.985)` },
-    enter: { opacity: 1, transform: 'translate3d(0,0%,0) scale(1)' },
-    leave: { opacity: 0, transform: `translate3d(0, ${lastDirection.current > 0 ? '-100%' : '100%'}, 0) scale(.985)`, position: 'absolute' },
-    config: { mass: 1, tension: 300, friction: 32 },
-    onStart: () => { if (activeCards.length > 1) playSoundEffect('switch'); },
+    const playFront = () => {
+      if (settings.autoPlayChinese && currentCard.chinese) {
+        playR2Audio(currentCard, startAutoBrowse, settings, level);
+      } else {
+        startAutoBrowse();
+      }
+    };
+
+    const playBack = () => {
+      const playExamples = () => {
+        if (settings.autoPlayExample && currentCard.example) {
+          playTTS(currentCard.example, settings.voiceChinese, settings.speechRateChinese, () => {
+            if (settings.autoPlayExample && currentCard.example2) {
+              playTTS(currentCard.example2, settings.voiceChinese, settings.speechRateChinese, startAutoBrowse);
+            } else {
+              startAutoBrowse();
+            }
+          });
+        } else {
+          startAutoBrowse();
+        }
+      };
+
+      if (settings.autoPlayBurmese && currentCard.burmese) {
+        playTTS(currentCard.burmese, settings.voiceBurmese, settings.speechRateBurmese, playExamples);
+      } else {
+        playExamples();
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (isFlipped) playBack();
+      else playFront();
+    }, 280);
+
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(autoBrowseTimerRef.current);
+    };
+  }, [currentIndex, currentCard, isFlipped, isOpen, settings, level, navigate]);
+
+  const pageTransition = useTransition(isOpen, {
+    from: { opacity: 0 },
+    enter: { opacity: 1 },
+    leave: { opacity: 0 },
+    config: { tension: 260, friction: 30 },
   });
-  const bind = useDrag(({ down, movement: [mx, my], velocity: [vx, vy], direction: [, yDir], event }) => {
-    if (event.target?.closest?.('[data-no-gesture]')) return;
-    if (down) return;
-    event.preventDefault?.(); event.stopPropagation?.();
-    const horizontal = Math.abs(mx) > Math.abs(my);
-    if (horizontal) { if (Math.abs(mx) > 96 || (Math.abs(vx) > .45 && Math.abs(mx) > 46)) { hideHint(); close(); } return; }
-    if (Math.abs(my) > 62 || (Math.abs(vy) > .34 && Math.abs(my) > 32)) navigate(yDir < 0 ? 1 : -1);
-  }, { filterTaps: true, preventDefault: true, threshold: 8, pointer: { touch: true } });
 
-  const content = pageTransitions((pageStyle, open) => {
-    if (!open) return null;
-    const bg = settings.backgroundImage
-      ? { background: `radial-gradient(circle at 12% 12%, rgba(255,255,255,.86), transparent 30%), radial-gradient(circle at 82% 10%, rgba(191,219,254,.62), transparent 32%), radial-gradient(circle at 80% 86%, rgba(221,214,254,.66), transparent 34%), linear-gradient(135deg, rgba(248,250,252,.76), rgba(239,246,255,.72), rgba(245,243,255,.70), rgba(253,242,248,.72)), url(${settings.backgroundImage}) center/cover no-repeat` }
-      : { background: 'radial-gradient(circle at 15% 18%, rgba(255,255,255,.96), transparent 28%), radial-gradient(circle at 82% 14%, rgba(191,219,254,.92), transparent 35%), radial-gradient(circle at 88% 78%, rgba(221,214,254,.84), transparent 34%), radial-gradient(circle at 8% 88%, rgba(254,226,226,.66), transparent 32%), linear-gradient(135deg, #f8fafc 0%, #eff6ff 34%, #eef2ff 62%, #f5f3ff 82%, #fdf2f8 100%)' };
+  const backgroundStyle = settings.backgroundImage
+    ? {
+        backgroundImage: `linear-gradient(180deg, rgba(248,250,252,0.72), rgba(241,245,249,0.52)), url(${settings.backgroundImage})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
+    : {};
+
+  const renderCard = () => {
+    if (!currentCard || activeCards.length === 0) {
+      return (
+        <div style={styles.emptyState}>
+          <div style={styles.emptyTitle}>🎉 恭喜，已学完本组单词</div>
+          <button type="button" style={styles.primaryPillButton} onClick={onClose}>关闭</button>
+        </div>
+      );
+    }
+
+    const backPinyin1 = currentCard.example ? getPinyinText(currentCard.example) : '';
+    const backPinyin2 = currentCard.example2 ? getPinyinText(currentCard.example2) : '';
+    const pinyinText = getPinyin(currentCard);
+
     return (
-      <animated.div {...bind()} onClick={tapCard} style={{ ...styles.fullScreen, ...bg, ...pageStyle }} className="word-card-no-select word-card-animated">
-        <div style={styles.glassLayer} />
-        {writerChar && <StrokeOrderModal word={writerChar} settings={settings} onClose={() => setWriterChar(null)} />}
-        {isSettingsOpen && <SettingsPanel settings={settings} onCancel={() => setIsSettingsOpen(false)} onSave={(next) => { setSettings(next); setIsSettingsOpen(false); }} />}
-        {isRecordingOpen && currentCard && <PronunciationComparison word={currentCard} pinyinText={getPinyin(currentCard)} settings={settings} level={level} onClose={() => setIsRecordingOpen(false)} />}
-        {isJumping && <JumpModal max={activeCards.length} current={currentIndex} onJump={jumpTo} onClose={() => setIsJumping(false)} />}
+      <div style={styles.cardCanvas} onClick={handleCardClick}>
+        <div style={styles.topLeftControls} data-no-gesture="true" data-no-flip="true">
+          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={handleGoHome} title="Home"><FaHome size={18} /></button>
+        </div>
 
-        {activeCards.length > 0 && currentCard ? cardTransitions((cardStyle, index) => {
-          const card = activeCards[index];
-          if (!card) return null;
-          return (
-            <animated.div key={card.id} style={{ ...styles.cardShell, ...cardStyle }}>
-              <div style={styles.flipScene}>
-                <div style={{ ...styles.flipCard, transform: isRevealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
-                  <section style={{ ...styles.face, ...styles.frontFace }}>
-                    <button type="button" data-no-gesture="true" style={styles.bigAudioButton} onClick={(e) => playManual(card, e)}><FaVolumeUp size={22} /></button>
-                    <div style={styles.frontContent}>{settings.showPinyin && <div style={styles.pinyin}>{getPinyin(card)}</div>}<div style={styles.chinese}>{card.chinese}</div><div style={styles.tapHint}>点击翻到背面</div></div>
-                  </section>
-                  <section style={{ ...styles.face, ...styles.backFace }}>
-                    <div style={styles.backContent} data-no-prevent-touch="true">
-                      <div style={styles.backTop}>{settings.showPinyin && <div style={styles.backPinyin}>{getPinyin(card)}</div>}<div style={styles.backChinese}>{card.chinese}</div></div>
-                      {settings.showBurmese && card.burmese && <button type="button" data-no-gesture="true" style={styles.definitionBox} onClick={(e) => playTTS(card.burmese, settings.voiceBurmese, settings.speechRateBurmese, null, e)}><div style={styles.burmese}>{card.burmese}</div></button>}
-                      {settings.showExplanation && card.explanation && <button type="button" data-no-gesture="true" style={styles.explanationBox} onClick={(e) => playTTS(card.explanation, settings.voiceBurmese, settings.speechRateBurmese, null, e)}>{card.explanation}</button>}
-                      {card.mnemonic && <div style={styles.mnemonicBox}>{card.mnemonic}</div>}
-                      {settings.showExamples && card.example && <button type="button" data-no-gesture="true" style={styles.exampleBox} onClick={(e) => playTTS(card.example, settings.voiceChinese, settings.speechRateChinese, null, e)}><div style={styles.examplePinyin}>{getPinyinText(card.example)}</div><div style={styles.exampleText}>{card.example}</div></button>}
-                      {settings.showExamples && card.example2 && <button type="button" data-no-gesture="true" style={styles.exampleBox} onClick={(e) => playTTS(card.example2, settings.voiceChinese, settings.speechRateChinese, null, e)}><div style={styles.examplePinyin}>{getPinyinText(card.example2)}</div><div style={styles.exampleText}>{card.example2}</div></button>}
-                      <div style={styles.tapHint}>点击翻回正面</div>
+        <div style={styles.rightControls} data-no-gesture="true" data-no-flip="true">
+          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsSettingsOpen(true); }} title="设置"><FaCog size={18} /></button>
+          <button
+            type="button"
+            style={{ ...styles.iconButton, ...(isSpellPlaying ? styles.iconButtonActive : {}) }}
+            onPointerDown={stopEvent}
+            onClick={handleSpellRead}
+            title="拼读音频"
+          >
+            <FaPlayCircle size={18} />
+          </button>
+          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsRecordingOpen(true); }} title="录音跟读"><FaMicrophone size={18} /></button>
+          {currentCard.chinese && currentCard.chinese.length <= 5 && !String(currentCard.chinese).includes(' ') && (
+            <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setWriterWord(currentCard.chinese); }} title="笔顺"><FaPenFancy size={18} /></button>
+          )}
+          <button type="button" style={styles.iconButton} onPointerDown={stopEvent} onClick={handleToggleFavorite} title="收藏">
+            {isFavoriteCard ? <FaHeart size={18} color="#ef4444" /> : <FaRegHeart size={18} />}
+          </button>
+        </div>
+
+        <div style={styles.flipArea} className="word-card-flip-scene">
+          <div
+            className="word-card-flip-inner"
+            style={{
+              ...styles.flipInner,
+              transform: `rotateY(${isFlipped ? 180 : 0}deg)`,
+            }}
+          >
+            <div className="word-card-face" style={{ ...styles.face, ...styles.frontFace }}>
+              <div style={styles.centerContent}>
+                {settings.showPinyin && <div style={styles.frontPinyin} className="word-card-pinyin">{pinyinText}</div>}
+                {settings.showChinese && <div style={styles.frontChinese}>{currentCard.chinese}</div>}
+                <div style={styles.frontTip}>点击翻到背面</div>
+              </div>
+            </div>
+
+            <div className="word-card-face word-card-face-back" style={{ ...styles.face, ...styles.backFace }}>
+              <div style={styles.backContent} data-no-flip="true">
+                <div style={styles.backHeader}>
+                  {settings.showPinyin && <div style={styles.backPinyin} className="word-card-pinyin">{pinyinText}</div>}
+                  {settings.showChinese && <div style={styles.backChinese}>{currentCard.chinese}</div>}
+                  <div style={styles.flipBackTip}>点击空白处翻回正面</div>
+                </div>
+
+                <div style={styles.backScroll} className="word-card-scroll" data-allow-native-scroll="true">
+                  {settings.showBurmese && currentCard.burmese && (
+                    <button type="button" style={styles.meaningCard} onClick={(e) => playTTS(currentCard.burmese, settings.voiceBurmese, settings.speechRateBurmese, null, e)} data-no-flip="true">
+                      <div style={styles.sectionLabel}>缅文释义</div>
+                      <div style={styles.burmeseText}>{currentCard.burmese}</div>
+                    </button>
+                  )}
+
+                  {currentCard.explanation && (
+                    <button type="button" style={styles.explainCard} onClick={(e) => playTTS(currentCard.explanation, settings.voiceBurmese, settings.speechRateBurmese, null, e)} data-no-flip="true">
+                      <div style={styles.sectionLabel}>补充说明</div>
+                      <div style={styles.explanationText}>{currentCard.explanation}</div>
+                    </button>
+                  )}
+
+                  {currentCard.mnemonic && (
+                    <div style={styles.memoCard} data-no-flip="true">
+                      <div style={styles.sectionLabel}>记忆提示</div>
+                      <div style={styles.memoText}>{currentCard.mnemonic}</div>
                     </div>
-                  </section>
+                  )}
+
+                  {settings.showExample && currentCard.example && (
+                    <button type="button" style={styles.exampleCard} onClick={(e) => playTTS(currentCard.example, settings.voiceChinese, settings.speechRateChinese, null, e)} data-no-flip="true">
+                      <div style={styles.sectionLabel}>例句 1</div>
+                      <div style={styles.examplePinyin} className="word-card-pinyin">{backPinyin1}</div>
+                      <div style={styles.exampleText}>{currentCard.example}</div>
+                    </button>
+                  )}
+
+                  {settings.showExample && currentCard.example2 && (
+                    <button type="button" style={styles.exampleCard} onClick={(e) => playTTS(currentCard.example2, settings.voiceChinese, settings.speechRateChinese, null, e)} data-no-flip="true">
+                      <div style={styles.sectionLabel}>例句 2</div>
+                      <div style={styles.examplePinyin} className="word-card-pinyin">{backPinyin2}</div>
+                      <div style={styles.exampleText}>{currentCard.example2}</div>
+                    </button>
+                  )}
                 </div>
               </div>
-            </animated.div>
-          );
-        }) : <div style={styles.doneBox} data-no-gesture="true"><h2>🎉 ဂုဏ်ယူပါတယ်!</h2><p>သင် ဒီသင်ခန်းစာကို လေ့လာပြီးသွားပါပြီ။</p><button type="button" style={{ ...styles.knowButtonBase, ...styles.knowButton }} onClick={close}>ပိတ်မည်</button></div>}
+            </div>
+          </div>
+        </div>
 
-        {currentCard && <div style={styles.rightControls} data-no-gesture="true"><button type="button" style={styles.iconButton} onClick={goHome}><FaHome /></button><button type="button" style={styles.iconButton} onClick={() => setIsSettingsOpen(true)}><FaCog /></button><button type="button" style={styles.iconButton} onClick={spellRead} title="音频拼读"><FaMagic /></button><button type="button" style={styles.iconButton} onClick={openRecorder}><FaMicrophone /></button>{currentCard.chinese?.length > 0 && currentCard.chinese.length <= 5 && !currentCard.chinese.includes(' ') && <button type="button" style={styles.iconButton} onClick={() => setWriterChar(currentCard.chinese)}><FaPenFancy /></button>}<button type="button" style={styles.iconButton} onClick={toggleFav}>{isFavoriteCard ? <FaHeart color="#f87171" /> : <FaRegHeart />}</button></div>}
-        {showHint && <div style={styles.navHint} data-no-gesture="true"><FaChevronUp size={14} /> 上滑下一张 / 下滑上一张 <FaChevronDown size={14} /></div>}
-        <div style={styles.bottomControls} data-no-gesture="true">{activeCards.length > 0 && <button type="button" style={styles.counter} onClick={() => setIsJumping(true)}>{currentIndex + 1} / {activeCards.length}</button>}<div style={styles.knowWrap}><button type="button" style={{ ...styles.knowButtonBase, ...styles.dontKnowButton }} onClick={dontKnow}>မသိဘူး</button><button type="button" style={{ ...styles.knowButtonBase, ...styles.knowButton }} onClick={know}>သိတယ်</button></div></div>
+        <div style={styles.bottomOverlay} data-no-gesture="true" data-no-flip="true">
+          <button type="button" style={styles.counterBadge} onPointerDown={stopEvent} onClick={(e) => { stopEvent(e); setIsJumping(true); }}>{currentIndex + 1} / {activeCards.length}</button>
+          <div style={styles.bottomButtons}>
+            <button type="button" style={styles.dontKnowButton} onPointerDown={stopEvent} onClick={handleDontKnow}>မသိဘူး</button>
+            <button type="button" style={styles.knowButton} onPointerDown={stopEvent} onClick={handleKnow}>သိတယ်</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const content = pageTransition((pageStyle, visible) => {
+    if (!visible) return null;
+
+    return (
+      <animated.div style={{ ...styles.fullScreen, ...backgroundStyle, ...pageStyle }} className="word-card-no-select word-card-animated">
+        <div style={styles.softGradientLayer} />
+        <div style={styles.blurBlobA} />
+        <div style={styles.blurBlobB} />
+        <div style={styles.blurBlobC} />
+
+        <div style={styles.gestureLayer} {...bind()}>
+          {showSwipeHint && (
+            <div style={styles.swipeHintBubble} data-no-gesture="true">
+              上滑下一张 · 下滑上一张 · 左右滑关闭
+            </div>
+          )}
+
+          {renderCard()}
+
+          {writerWord && currentCard && (
+            <SafeHanziModal
+              word={writerWord}
+              pinyinText={getPinyin(currentCard)}
+              settings={settings}
+              onClose={() => setWriterWord(null)}
+              onSpeakText={(text, done) => playTTS(text, settings.voiceChinese, settings.speechRateChinese, done, null, { cancelSpell: false })}
+              onSpeakWord={(done) => playR2Audio(currentCard, done, settings, level, { cancelSpell: false })}
+            />
+          )}
+
+          {isRecordingOpen && currentCard && (
+            <PronunciationComparison
+              correctWord={currentCard.chinese}
+              pinyinText={getPinyin(currentCard)}
+              settings={settings}
+              onClose={() => setIsRecordingOpen(false)}
+            />
+          )}
+
+          {isSettingsOpen && (
+            <SettingsPanel
+              settings={settings}
+              onCancel={() => setIsSettingsOpen(false)}
+              onSave={(next) => {
+                setSettings({ ...DEFAULT_SETTINGS, ...next });
+                setIsSettingsOpen(false);
+              }}
+            />
+          )}
+
+          {isJumping && (
+            <JumpModal
+              max={activeCards.length}
+              current={currentIndex}
+              onJump={jumpToCard}
+              onClose={() => setIsJumping(false)}
+            />
+          )}
+        </div>
       </animated.div>
     );
   });
 
-  if (isMounted) return createPortal(content, document.body);
-  return null;
-};
+  return isMounted ? createPortal(content, document.body) : null;
+}
 
-const baseButton = { appearance: 'none', border: 'none', fontFamily: 'inherit' };
-const pinyinFont = '"Noto Sans", "Noto Sans SC", "Arial Unicode MS", "Helvetica Neue", Arial, sans-serif';
+// =================================================================================
+// Styles
+// =================================================================================
+const pinyinFont = 'Arial, Helvetica, "Noto Sans", sans-serif';
+const burmeseFont = '"Padauk", "Myanmar Text", sans-serif';
+const shadowSoft = '0 20px 60px rgba(51, 65, 85, 0.14)';
+const glassWhite = 'rgba(255,255,255,0.56)';
+const glassBorder = '1px solid rgba(255,255,255,0.65)';
 
 const styles = {
-  fullScreen: { position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', WebkitTapHighlightColor: 'transparent' },
-  glassLayer: { position: 'absolute', inset: 0, zIndex: 0, backdropFilter: 'blur(18px) saturate(145%)', WebkitBackdropFilter: 'blur(18px) saturate(145%)', background: 'linear-gradient(180deg, rgba(255,255,255,.34), rgba(255,255,255,.14))', border: '1px solid rgba(255,255,255,.42)' },
-  cardShell: { position: 'absolute', inset: 0, zIndex: 2, display: 'flex', alignItems: 'stretch', justifyContent: 'stretch', width: '100%', height: '100%', padding: 'calc(16px + env(safe-area-inset-top)) 12px calc(126px + env(safe-area-inset-bottom)) 12px', pointerEvents: 'none' },
-  flipScene: { width: '100%', height: '100%', perspective: 1200, pointerEvents: 'auto' },
-  flipCard: { position: 'relative', width: '100%', height: '100%', transformStyle: 'preserve-3d', transition: 'transform 520ms cubic-bezier(.2,.8,.2,1)', borderRadius: 32 },
-  face: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 32, overflow: 'hidden', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', background: 'rgba(255,255,255,.28)', border: '1px solid rgba(255,255,255,.58)', boxShadow: '0 28px 90px rgba(15,23,42,.13)', backdropFilter: 'blur(20px) saturate(140%)', WebkitBackdropFilter: 'blur(20px) saturate(140%)' },
-  frontFace: { transform: 'rotateY(0deg)' },
-  backFace: { transform: 'rotateY(180deg)', padding: '24px 16px' },
-  frontContent: { width: '100%', maxWidth: 560, minHeight: 260, padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' },
-  bigAudioButton: { ...baseButton, position: 'absolute', top: 26, right: 24, width: 58, height: 58, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.74)', color: '#2563eb', boxShadow: '0 12px 28px rgba(37,99,235,.12)', cursor: 'pointer' },
-  pinyin: { fontFamily: pinyinFont, fontSize: 'clamp(1.5rem,5vw,2.35rem)', color: '#d97706', marginBottom: '1rem', letterSpacing: '.035em', fontWeight: 900, lineHeight: 1.35, fontVariantLigatures: 'none', textRendering: 'geometricPrecision' },
-  chinese: { fontSize: 'clamp(4rem,22vw,10rem)', fontWeight: 950, color: '#111827', lineHeight: 1.03, wordBreak: 'break-word', textShadow: '0 12px 40px rgba(17,24,39,.08)' },
-  tapHint: { marginTop: 18, fontSize: '.9rem', color: 'rgba(75,85,99,.62)', fontWeight: 700 },
-  backContent: { width: '100%', height: '100%', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '8px 6px' },
-  backTop: { textAlign: 'center', marginBottom: 4 },
-  backPinyin: { fontFamily: pinyinFont, color: '#d97706', fontWeight: 850, fontSize: '1.15rem', lineHeight: 1.35, fontVariantLigatures: 'none', textRendering: 'geometricPrecision' },
-  backChinese: { fontSize: '2.1rem', color: '#111827', fontWeight: 900, lineHeight: 1.15 },
-  definitionBox: { ...baseButton, cursor: 'pointer', textAlign: 'center', background: 'rgba(255,255,255,.42)', borderRadius: 20, padding: '10px 16px', color: 'inherit', maxWidth: '100%' },
-  burmese: { fontSize: 'clamp(1.25rem,4vw,1.75rem)', color: '#374151', fontFamily: '"Padauk", "Myanmar Text", sans-serif', lineHeight: 1.55, wordBreak: 'break-word' },
-  explanationBox: { ...baseButton, color: '#16a34a', textAlign: 'center', fontSize: '1.08rem', background: 'rgba(240,253,244,.38)', padding: '8px 14px', maxWidth: '100%', borderRadius: 18, cursor: 'pointer', fontFamily: '"Padauk", "Myanmar Text", sans-serif', lineHeight: 1.45, fontWeight: 650 },
-  mnemonicBox: { color: '#6b7280', display: 'inline-block', textAlign: 'center', fontSize: '1rem', background: 'rgba(255,255,255,.34)', padding: '8px 14px', borderRadius: 16, maxWidth: '100%', lineHeight: 1.45 },
-  exampleBox: { ...baseButton, color: '#374151', width: '100%', maxWidth: 520, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', background: 'rgba(255,255,255,.42)', padding: '10px 12px', borderRadius: 18, border: '1px solid rgba(229,231,235,.88)', boxShadow: '0 8px 22px rgba(15,23,42,.05)' },
-  examplePinyin: { fontFamily: pinyinFont, fontSize: '.96rem', color: '#d97706', opacity: .94, letterSpacing: '.02em', fontWeight: 700, lineHeight: 1.35, fontVariantLigatures: 'none', textRendering: 'geometricPrecision' },
-  exampleText: { fontSize: '1.18rem', lineHeight: 1.4 },
-  rightControls: { position: 'fixed', top: '50%', right: 10, zIndex: 1010, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', transform: 'translateY(-50%)' },
-  iconButton: { ...baseButton, background: 'rgba(255,255,255,.82)', border: '1px solid rgba(229,231,235,.9)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, borderRadius: '50%', boxShadow: '0 10px 24px rgba(15,23,42,.13)', color: '#4b5563', touchAction: 'manipulation', backdropFilter: 'blur(10px)' },
-  navHint: { position: 'fixed', top: 'calc(14px + env(safe-area-inset-top))', left: '50%', zIndex: 1005, transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(55,65,81,.78)', fontSize: '.82rem', fontWeight: 850, background: 'rgba(255,255,255,.58)', border: '1px solid rgba(229,231,235,.75)', borderRadius: 999, padding: '8px 14px', backdropFilter: 'blur(12px)', boxShadow: '0 10px 26px rgba(15,23,42,.08)', animation: 'wcHint 1.6s ease-in-out infinite' },
-  bottomControls: { position: 'fixed', bottom: 0, left: 0, right: 0, padding: '15px 15px max(15px, env(safe-area-inset-bottom))', zIndex: 1010, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, pointerEvents: 'auto' },
-  counter: { ...baseButton, background: 'rgba(255,255,255,.74)', color: '#374151', padding: '8px 20px', borderRadius: 20, fontSize: '1rem', fontWeight: 900, cursor: 'pointer', boxShadow: '0 10px 24px rgba(15,23,42,.1)', backdropFilter: 'blur(10px)' },
-  knowWrap: { display: 'flex', width: '100%', maxWidth: 520, gap: 14 },
-  knowButtonBase: { ...baseButton, flex: 1, padding: 17, borderRadius: 20, fontSize: '1.24rem', fontWeight: 950, color: 'white', cursor: 'pointer', boxShadow: '0 14px 30px rgba(15,23,42,.15)', touchAction: 'manipulation' },
-  dontKnowButton: { background: 'linear-gradient(135deg,#f59e0b,#b45309)' },
-  knowButton: { background: 'linear-gradient(135deg,#10b981,#047857)' },
-  doneBox: { textAlign: 'center', color: '#374151', zIndex: 5, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 24 },
-
-  modalMask: { position: 'fixed', inset: 0, background: 'rgba(15,23,42,.58)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 18 },
-  recordPanel: { width: '100%', maxWidth: 398, background: 'rgba(255,255,255,.96)', borderRadius: 26, overflow: 'hidden', animation: 'wcFadeIn .3s ease-out', boxShadow: '0 24px 48px rgba(0,0,0,.22)' },
-  recordHeader: { padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' },
-  recordTitle: { margin: 0, color: '#374151', fontSize: '1.1rem', fontWeight: 900 },
-  textCloseButton: { ...baseButton, color: '#64748b', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 999, padding: '7px 12px', fontWeight: 800, cursor: 'pointer' },
-  recordBody: { padding: '28px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, minHeight: 300 },
-  recordWord: { textAlign: 'center', width: '100%' },
-  modalPinyin: { fontFamily: pinyinFont, fontSize: '1.2rem', color: '#8b5cf6', fontWeight: 900, letterSpacing: 1, marginBottom: 8, lineHeight: 1.35, fontVariantLigatures: 'none', textRendering: 'geometricPrecision' },
-  modalChinese: { fontSize: '3rem', fontWeight: 950, color: '#0f172a', lineHeight: 1.1 },
-  recordCenter: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, width: '100%' },
-  bigRecordBtn: { ...baseButton, width: 88, height: 88, borderRadius: '50%', background: 'linear-gradient(135deg,#3b82f6,#2563eb)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 10px 25px rgba(59,130,246,.4)', padding: 0 },
-  recordingPulse: { background: 'linear-gradient(135deg,#ef4444,#dc2626)', animation: 'wcRipple 1.5s infinite' },
-  instruction: { color: '#64748b', fontSize: '1rem', fontWeight: 800, textAlign: 'center' },
-  errorText: { color: '#dc2626', fontSize: '.86rem', textAlign: 'center', lineHeight: 1.45, maxWidth: 300 },
-  waveBox: { display: 'flex', gap: 4, alignItems: 'center', height: 24, marginBottom: -10 },
-  waveBar: { display: 'block', width: 4, height: '100%', background: '#ef4444', borderRadius: 2, animation: 'wcWave 1s ease-in-out infinite' },
-  recognitionBox: { width: '100%', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569', borderRadius: 16, padding: '10px 12px', fontSize: '.94rem', lineHeight: 1.45, textAlign: 'center' },
-  recognitionGood: { background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857' },
-  reviewBox: { width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 },
-  reviewRow: { display: 'flex', justifyContent: 'center', width: '100%', gap: 16 },
-  reviewCard: { ...baseButton, flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '18px 10px', background: '#f8fafc', borderRadius: 20, cursor: 'pointer' },
-  iconCircle: { width: 54, height: 54, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  retryButton: { ...baseButton, background: 'white', border: '1px solid #e2e8f0', color: '#64748b', padding: '10px 24px', borderRadius: 99, fontSize: '.9rem', fontWeight: 850, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 },
-
-  settingsPanel: { background: 'rgba(255,255,255,.98)', padding: 24, borderRadius: 24, width: '100%', maxWidth: 500, boxShadow: '0 20px 50px rgba(0,0,0,.24)', maxHeight: '86vh', overflowY: 'auto', position: 'relative' },
-  settingsTitle: { marginTop: 0, color: '#111827', fontSize: '1.35rem', fontWeight: 950 },
-  settingGroup: { marginBottom: 22 },
-  settingLabel: { display: 'block', fontWeight: 900, marginBottom: 10, color: '#333' },
-  segment: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: 4, background: '#f3f4f6', borderRadius: 16 },
-  segmentBtn: { ...baseButton, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 12px', borderRadius: 12, background: 'transparent', color: '#4b5563', cursor: 'pointer', fontWeight: 850 },
-  segmentActive: { background: '#3b82f6', color: '#fff', boxShadow: '0 8px 18px rgba(59,130,246,.22)' },
-  stack: { display: 'flex', flexDirection: 'column', gap: 10 },
-  switchLabel: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#4b5563', fontWeight: 800, gap: 12 },
-  switchDesc: { display: 'block', fontWeight: 600, color: '#94a3b8', marginTop: 2, lineHeight: 1.35 },
-  hidden: { display: 'none' },
-  switchTrack: { width: 48, height: 26, borderRadius: 999, padding: 2, transition: 'background .2s', display: 'inline-flex', alignItems: 'center', flex: '0 0 auto' },
-  switchThumb: { width: 22, height: 22, borderRadius: '50%', background: '#fff', display: 'block', boxShadow: '0 2px 6px rgba(0,0,0,.2)', transition: 'transform .2s' },
-  rangeRow: { display: 'grid', gridTemplateColumns: '84px 1fr 46px', alignItems: 'center', gap: 10, marginTop: 12, color: '#4b5563', fontSize: '.9rem' },
-  select: { width: '100%', padding: '11px 12px', borderRadius: 14, border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontWeight: 700 },
-  settingBtns: { display: 'flex', gap: 10 },
-  grayButton: { ...baseButton, background: '#f3f4f6', color: '#4b5563', padding: '10px 14px', borderRadius: 14, cursor: 'pointer', fontWeight: 800, flex: 1 },
-  settingsFooter: { position: 'sticky', bottom: -24, margin: '6px -24px -24px', padding: '14px 24px max(14px, env(safe-area-inset-bottom))', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: 'rgba(255,255,255,.94)', borderTop: '1px solid #e5e7eb', backdropFilter: 'blur(10px)' },
-  cancelButton: { ...baseButton, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 14, borderRadius: 16, background: '#f1f5f9', color: '#475569', fontWeight: 900, cursor: 'pointer' },
-  saveButton: { ...baseButton, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 14, borderRadius: 16, background: '#2563eb', color: '#fff', fontWeight: 900, cursor: 'pointer' },
-  jumpPanel: { background: '#fff', padding: 25, borderRadius: 18, textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,.2)' },
-  jumpInput: { width: 110, padding: 10, fontSize: '1.2rem', textAlign: 'center', border: '2px solid #d1d5db', borderRadius: 10, marginBottom: 15 },
-  jumpButton: { ...baseButton, width: '100%', padding: 12, borderRadius: 12, background: '#4299e1', color: '#fff', fontSize: '1rem', fontWeight: 850, cursor: 'pointer' },
-
-  strokePanel: { width: '100%', maxWidth: 650, maxHeight: '88vh', overflowY: 'auto', background: 'rgba(255,255,255,.98)', borderRadius: 26, padding: '26px 20px 24px', boxShadow: '0 24px 60px rgba(0,0,0,.26)', textAlign: 'center' },
-  strokeTitle: { fontSize: '1.35rem', color: '#111827', fontWeight: 950, marginBottom: 8 },
-  strokePinyin: { fontFamily: pinyinFont, fontSize: '1.35rem', color: '#8b5cf6', fontWeight: 950, lineHeight: 1.45, letterSpacing: '.02em', textRendering: 'geometricPrecision', fontVariantLigatures: 'none' },
-  strokeOptions: { display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 10, margin: '16px 0 12px' },
-  smallPill: { ...baseButton, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155', borderRadius: 999, padding: '9px 14px', fontWeight: 850, cursor: 'pointer' },
-  smallPillActive: { background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' },
-  strokeSpeedRow: { display: 'grid', gridTemplateColumns: '48px 1fr 48px', alignItems: 'center', gap: 10, maxWidth: 410, margin: '0 auto 20px', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 14px', borderRadius: 16, color: '#334155' },
-  strokeError: { color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', padding: 10, borderRadius: 14, marginBottom: 12, fontWeight: 700 },
-  strokeGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', justifyItems: 'center', gap: 14, marginBottom: 22 },
-  strokeCell: { width: 142, height: 142, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 16, border: '1px solid #e5e7eb', background: '#fff', boxShadow: '0 8px 22px rgba(15,23,42,.06)' },
-  strokeWriterBox: { width: 132, height: 132, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  strokeFallbackChar: { fontSize: '5rem', fontWeight: 500, color: '#525252', lineHeight: 1 },
-  strokeActions: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 },
-  strokeActionButton: { ...baseButton, background: '#eef2ff', color: '#1e293b', padding: '14px 10px', borderRadius: 16, fontSize: '1rem', fontWeight: 950, cursor: 'pointer' },
-  primaryButton: { background: '#2563eb', color: '#fff' },
-  strokeCloseButton: { ...baseButton, background: '#eef2ff', color: '#1e293b', padding: '13px 28px', borderRadius: 16, fontSize: '1rem', fontWeight: 950, cursor: 'pointer' },
+  fullScreen: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 1000,
+    overflow: 'hidden',
+    touchAction: 'none',
+    overscrollBehavior: 'none',
+    background: 'linear-gradient(145deg, #eff8ff 0%, #f7fbff 42%, #f9f4ff 68%, #fff7f1 100%)',
+  },
+  softGradientLayer: {
+    position: 'absolute',
+    inset: 0,
+    background: 'linear-gradient(180deg, rgba(255,255,255,0.45), rgba(255,255,255,0.2))',
+    backdropFilter: 'blur(8px)',
+  },
+  blurBlobA: {
+    position: 'absolute',
+    top: '-10%',
+    right: '-22%',
+    width: '70vw',
+    height: '70vw',
+    borderRadius: '50%',
+    background: 'rgba(125, 211, 252, 0.34)',
+    filter: 'blur(28px)',
+  },
+  blurBlobB: {
+    position: 'absolute',
+    left: '-24%',
+    bottom: '-16%',
+    width: '76vw',
+    height: '76vw',
+    borderRadius: '50%',
+    background: 'rgba(253, 186, 116, 0.22)',
+    filter: 'blur(34px)',
+  },
+  blurBlobC: {
+    position: 'absolute',
+    right: '8%',
+    bottom: '8%',
+    width: '56vw',
+    height: '56vw',
+    borderRadius: '50%',
+    background: 'rgba(196, 181, 253, 0.24)',
+    filter: 'blur(32px)',
+  },
+  gestureLayer: {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    touchAction: 'none',
+    overflow: 'hidden',
+  },
+  cardCanvas: {
+    position: 'absolute',
+    inset: 0,
+    overflow: 'hidden',
+    background: 'linear-gradient(135deg, rgba(255,255,255,0.38), rgba(255,255,255,0.18))',
+    backdropFilter: 'blur(20px)',
+  },
+  swipeHintBubble: {
+    position: 'absolute',
+    top: 'max(14px, env(safe-area-inset-top))',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '10px 16px',
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.68)',
+    border: glassBorder,
+    boxShadow: shadowSoft,
+    backdropFilter: 'blur(16px)',
+    color: '#475569',
+    fontWeight: 800,
+    fontSize: '0.9rem',
+    zIndex: 20,
+    whiteSpace: 'nowrap',
+    animation: 'wordCardHintFloat 2.2s ease-in-out infinite',
+  },
+  topLeftControls: {
+    position: 'absolute',
+    top: 'calc(16px + env(safe-area-inset-top))',
+    left: '16px',
+    zIndex: 12,
+  },
+  rightControls: {
+    position: 'absolute',
+    right: '14px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    zIndex: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '13px',
+  },
+  iconButton: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    border: glassBorder,
+    background: 'rgba(255,255,255,0.78)',
+    backdropFilter: 'blur(16px)',
+    color: '#475569',
+    boxShadow: '0 10px 28px rgba(71,85,105,0.14)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    padding: 0,
+  },
+  iconButtonActive: {
+    color: '#2563eb',
+    background: 'rgba(219,234,254,0.88)',
+    transform: 'scale(0.96)',
+  },
+  flipArea: {
+    position: 'absolute',
+    inset: '0 0 148px 0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'calc(58px + env(safe-area-inset-top)) 76px 18px 34px',
+  },
+  flipInner: {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+  },
+  face: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  frontFace: {
+    color: '#0f172a',
+  },
+  backFace: {
+    color: '#0f172a',
+  },
+  centerContent: {
+    textAlign: 'center',
+    width: '100%',
+    maxWidth: '640px',
+    padding: '8px 4px',
+  },
+  frontPinyin: {
+    fontFamily: pinyinFont,
+    fontSize: 'clamp(2rem, 7vw, 3.1rem)',
+    color: '#c76b00',
+    fontWeight: 900,
+    lineHeight: 1.42,
+    marginBottom: '10px',
+  },
+  frontChinese: {
+    fontSize: 'clamp(5.6rem, 24vw, 11rem)',
+    fontWeight: 950,
+    lineHeight: 1.03,
+    letterSpacing: '-0.06em',
+    color: '#111827',
+    textShadow: '0 18px 38px rgba(15,23,42,0.10)',
+    wordBreak: 'break-word',
+  },
+  frontTip: {
+    marginTop: '28px',
+    color: 'rgba(71,85,105,0.68)',
+    fontWeight: 900,
+    fontSize: 'clamp(1rem, 4vw, 1.25rem)',
+  },
+  backContent: {
+    width: '100%',
+    height: '100%',
+    maxWidth: '680px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    padding: '2px 0',
+  },
+  backHeader: {
+    textAlign: 'center',
+    flex: '0 0 auto',
+  },
+  backPinyin: {
+    fontFamily: pinyinFont,
+    fontSize: '1.4rem',
+    color: '#c76b00',
+    fontWeight: 900,
+    lineHeight: 1.45,
+  },
+  backChinese: {
+    marginTop: '2px',
+    fontSize: '2.1rem',
+    fontWeight: 950,
+    color: '#111827',
+  },
+  flipBackTip: {
+    marginTop: '4px',
+    color: 'rgba(100,116,139,0.72)',
+    fontSize: '0.86rem',
+    fontWeight: 700,
+  },
+  backScroll: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+    touchAction: 'pan-y',
+    padding: '0 0 6px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  meaningCard: {
+    width: '100%',
+    border: glassBorder,
+    background: 'rgba(255,255,255,0.66)',
+    backdropFilter: 'blur(16px)',
+    borderRadius: '24px',
+    padding: '18px 16px',
+    boxShadow: '0 12px 30px rgba(71,85,105,0.10)',
+    textAlign: 'center',
+    cursor: 'pointer',
+  },
+  explainCard: {
+    width: '100%',
+    border: '1px solid rgba(167,243,208,0.75)',
+    background: 'rgba(240,253,244,0.66)',
+    backdropFilter: 'blur(16px)',
+    borderRadius: '22px',
+    padding: '14px 15px',
+    textAlign: 'center',
+    cursor: 'pointer',
+  },
+  memoCard: {
+    width: '100%',
+    border: '1px solid rgba(253,230,138,0.72)',
+    background: 'rgba(255,251,235,0.62)',
+    backdropFilter: 'blur(16px)',
+    borderRadius: '22px',
+    padding: '14px 15px',
+    textAlign: 'center',
+  },
+  exampleCard: {
+    width: '100%',
+    border: '1px solid rgba(191,219,254,0.75)',
+    background: 'rgba(239,246,255,0.64)',
+    backdropFilter: 'blur(16px)',
+    borderRadius: '22px',
+    padding: '14px 15px',
+    textAlign: 'center',
+    cursor: 'pointer',
+  },
+  sectionLabel: {
+    fontSize: '0.78rem',
+    fontWeight: 900,
+    letterSpacing: '0.04em',
+    color: '#64748b',
+    marginBottom: '6px',
+  },
+  burmeseText: {
+    fontFamily: burmeseFont,
+    fontSize: '1.55rem',
+    fontWeight: 800,
+    color: '#334155',
+    lineHeight: 1.5,
+  },
+  explanationText: {
+    fontFamily: burmeseFont,
+    fontSize: '1.08rem',
+    fontWeight: 700,
+    color: '#15803d',
+    lineHeight: 1.5,
+  },
+  memoText: {
+    fontSize: '1rem',
+    color: '#92400e',
+    fontWeight: 700,
+    lineHeight: 1.45,
+  },
+  examplePinyin: {
+    fontFamily: pinyinFont,
+    fontSize: '1rem',
+    color: '#c76b00',
+    fontWeight: 800,
+    lineHeight: 1.45,
+    marginBottom: '4px',
+  },
+  exampleText: {
+    fontSize: '1.25rem',
+    color: '#1e293b',
+    fontWeight: 800,
+    lineHeight: 1.42,
+  },
+  bottomOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 'calc(14px + env(safe-area-inset-bottom))',
+    zIndex: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '14px',
+    padding: '0 18px',
+  },
+  counterBadge: {
+    border: glassBorder,
+    background: glassWhite,
+    backdropFilter: 'blur(18px)',
+    boxShadow: shadowSoft,
+    color: '#334155',
+    padding: '12px 28px',
+    borderRadius: '999px',
+    fontSize: '1.22rem',
+    fontWeight: 950,
+    cursor: 'pointer',
+  },
+  bottomButtons: {
+    width: '100%',
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '14px',
+  },
+  dontKnowButton: {
+    height: '74px',
+    borderRadius: '24px',
+    border: 'none',
+    background: 'linear-gradient(135deg, #f59e0b, #b45309)',
+    color: 'white',
+    fontFamily: burmeseFont,
+    fontSize: '1.55rem',
+    fontWeight: 950,
+    cursor: 'pointer',
+    boxShadow: '0 16px 32px rgba(180,83,9,0.24)',
+  },
+  knowButton: {
+    height: '74px',
+    borderRadius: '24px',
+    border: 'none',
+    background: 'linear-gradient(135deg, #10b981, #047857)',
+    color: 'white',
+    fontFamily: burmeseFont,
+    fontSize: '1.55rem',
+    fontWeight: 950,
+    cursor: 'pointer',
+    boxShadow: '0 16px 32px rgba(4,120,87,0.24)',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 10020,
+    background: 'rgba(15,23,42,0.50)',
+    backdropFilter: 'blur(10px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '20px',
+  },
+  simpleModalPanel: {
+    width: '100%',
+    maxWidth: '420px',
+    borderRadius: '28px',
+    background: 'rgba(255,255,255,0.95)',
+    boxShadow: '0 24px 70px rgba(15,23,42,0.24)',
+    padding: '24px',
+    textAlign: 'center',
+  },
+  recordPanel: {
+    width: '100%',
+    maxWidth: '410px',
+    borderRadius: '28px',
+    background: 'rgba(255,255,255,0.96)',
+    boxShadow: '0 24px 70px rgba(15,23,42,0.24)',
+    padding: '20px',
+  },
+  modalHeaderLine: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '18px',
+  },
+  recordTitle: {
+    margin: 0,
+    fontSize: '1.15rem',
+    color: '#1e293b',
+    fontWeight: 950,
+  },
+  smallIconButton: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    border: '1px solid #e2e8f0',
+    background: 'white',
+    color: '#64748b',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordWordDisplay: {
+    textAlign: 'center',
+    marginBottom: '24px',
+  },
+  compPinyin: {
+    fontFamily: pinyinFont,
+    fontSize: '1.2rem',
+    color: '#7c3aed',
+    fontWeight: 900,
+    lineHeight: 1.45,
+  },
+  compChinese: {
+    fontSize: '3rem',
+    fontWeight: 950,
+    color: '#0f172a',
+    lineHeight: 1.1,
+  },
+  idleStateContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '14px',
+  },
+  bigRecordBtn: {
+    width: '88px',
+    height: '88px',
+    borderRadius: '50%',
+    border: 'none',
+    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+    color: 'white',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 14px 32px rgba(37,99,235,0.32)',
+    cursor: 'pointer',
+  },
+  recordingPulse: {
+    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+    animation: 'wordCardRecordRipple 1.5s infinite',
+  },
+  instructionText: {
+    color: '#475569',
+    fontWeight: 850,
+    fontSize: '1rem',
+  },
+  waveformContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px',
+    height: '28px',
+  },
+  waveBar: {
+    width: '5px',
+    height: '10px',
+    borderRadius: '999px',
+    background: '#ef4444',
+    animation: 'wordCardRecordWave 1s ease-in-out infinite',
+  },
+  errorText: {
+    color: '#dc2626',
+    fontWeight: 800,
+  },
+  reviewContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+  },
+  reviewRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '14px',
+  },
+  reviewCard: {
+    borderRadius: '22px',
+    background: '#f8fafc',
+    padding: '18px 10px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '10px',
+    cursor: 'pointer',
+  },
+  reviewCircle: {
+    width: '54px',
+    height: '54px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewCardText: {
+    color: '#475569',
+    fontWeight: 900,
+  },
+  modalActionRow: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: '10px',
+  },
+  secondaryPillButton: {
+    border: '1px solid #e2e8f0',
+    background: '#f8fafc',
+    color: '#334155',
+    borderRadius: '999px',
+    padding: '12px 18px',
+    fontWeight: 900,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '7px',
+  },
+  primaryPillButton: {
+    border: 'none',
+    background: '#2563eb',
+    color: 'white',
+    borderRadius: '999px',
+    padding: '12px 22px',
+    fontWeight: 950,
+    cursor: 'pointer',
+  },
+  settingsOverlay: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 10030,
+    background: 'rgba(15,23,42,0.45)',
+    backdropFilter: 'blur(10px)',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    padding: '12px',
+  },
+  settingsPanel: {
+    width: '100%',
+    maxWidth: '520px',
+    maxHeight: '84vh',
+    display: 'flex',
+    flexDirection: 'column',
+    borderRadius: '30px',
+    background: 'rgba(255,255,255,0.97)',
+    boxShadow: '0 24px 70px rgba(15,23,42,0.26)',
+    overflow: 'hidden',
+  },
+  settingsHeader: {
+    padding: '22px 22px 14px',
+    borderBottom: '1px solid #e2e8f0',
+  },
+  settingsTitle: {
+    margin: 0,
+    fontSize: '1.2rem',
+    color: '#1e293b',
+    fontWeight: 950,
+  },
+  mutedInfo: {
+    color: '#64748b',
+    fontSize: '0.86rem',
+    fontWeight: 700,
+    lineHeight: 1.4,
+  },
+  settingsBody: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '18px 22px',
+    overscrollBehavior: 'contain',
+    touchAction: 'pan-y',
+  },
+  settingGroup: {
+    marginBottom: '22px',
+  },
+  settingLabel: {
+    color: '#334155',
+    fontWeight: 950,
+    marginBottom: '10px',
+  },
+  checkboxRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '9px',
+    minHeight: '34px',
+    color: '#334155',
+    fontWeight: 800,
+  },
+  toggleRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '10px',
+  },
+  segmentButton: {
+    minHeight: '46px',
+    borderRadius: '16px',
+    border: '1px solid #e2e8f0',
+    background: '#f8fafc',
+    color: '#334155',
+    fontWeight: 900,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+  },
+  segmentActive: {
+    borderColor: '#93c5fd',
+    background: '#dbeafe',
+    color: '#1d4ed8',
+  },
+  sliderGroup: {
+    marginTop: '12px',
+  },
+  sliderLabelRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    color: '#475569',
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    marginBottom: '8px',
+  },
+  select: {
+    width: '100%',
+    height: '46px',
+    borderRadius: '16px',
+    border: '1px solid #cbd5e1',
+    background: 'white',
+    color: '#1e293b',
+    fontWeight: 800,
+    padding: '0 12px',
+  },
+  settingsFooter: {
+    flex: '0 0 auto',
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px',
+    padding: '16px 18px calc(16px + env(safe-area-inset-bottom))',
+    borderTop: '1px solid #e2e8f0',
+    background: 'rgba(255,255,255,0.96)',
+  },
+  settingsCancelBtn: {
+    height: '52px',
+    borderRadius: '18px',
+    border: '1px solid #e2e8f0',
+    background: '#f8fafc',
+    color: '#334155',
+    fontWeight: 950,
+    fontSize: '1rem',
+    cursor: 'pointer',
+  },
+  settingsSaveBtn: {
+    height: '52px',
+    borderRadius: '18px',
+    border: 'none',
+    background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+    color: 'white',
+    fontWeight: 950,
+    fontSize: '1rem',
+    cursor: 'pointer',
+  },
+  jumpPanel: {
+    width: '100%',
+    maxWidth: '320px',
+    borderRadius: '26px',
+    background: 'white',
+    boxShadow: '0 24px 70px rgba(15,23,42,0.26)',
+    padding: '22px',
+    textAlign: 'center',
+  },
+  jumpInput: {
+    width: '120px',
+    height: '52px',
+    textAlign: 'center',
+    fontSize: '1.25rem',
+    fontWeight: 900,
+    borderRadius: '16px',
+    border: '2px solid #cbd5e1',
+    marginTop: '16px',
+  },
+  emptyState: {
+    position: 'absolute',
+    inset: 0,
+    zIndex: 5,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '18px',
+    padding: '24px',
+    textAlign: 'center',
+  },
+  emptyTitle: {
+    fontSize: '1.3rem',
+    fontWeight: 950,
+    color: '#1e293b',
+  },
+  modalTitle: {
+    color: '#1e293b',
+    fontWeight: 950,
+    fontSize: '1.2rem',
+    marginBottom: '12px',
+  },
+  fallbackHanzi: {
+    fontSize: '4.8rem',
+    fontWeight: 950,
+    color: '#111827',
+    lineHeight: 1.08,
+    margin: '8px 0 12px',
+  },
 };
-
-export default WordCard;
