@@ -114,6 +114,7 @@ const sanitizeSettingsForSave = (settings) => {
 
 const playBeep = () => {
   try {
+    if (typeof window === 'undefined') return;
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
@@ -131,6 +132,29 @@ const playBeep = () => {
       } catch {}
     }, 120);
   } catch {}
+};
+
+// 唐僧叨叨 Android WebView 会注入 window.TangSengSpeech。
+// 在 App 内优先走 Android 原生 SpeechRecognizer；普通浏览器继续走 Web Speech API。
+const getTangSengSpeechBridge = () => {
+  try {
+    if (typeof window === 'undefined') return null;
+    const bridge = window.TangSengSpeech;
+    if (!bridge) return null;
+    if (typeof bridge.startRecognition === 'function' || typeof bridge.startSpeech === 'function') {
+      return bridge;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const readNativeSpeechText = (event) => {
+  const detail = event?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail.text === 'string') return detail.text;
+  return '';
 };
 
 const compressImage = (file) =>
@@ -487,6 +511,7 @@ function useTTS() {
 function useSpeechInput({ sourceLang, delayMs, onSend }) {
   const recognitionRef = useRef(null);
   const autoSendTimerRef = useRef(null);
+  const nativeSpeechCleanupRef = useRef(null);
   const finalTextRef = useRef('');
   const displayTextRef = useRef('');
   const hasAutoSentRef = useRef(false);
@@ -501,6 +526,13 @@ function useSpeechInput({ sourceLang, delayMs, onSend }) {
     }
   }, []);
 
+  const clearNativeSpeechListeners = useCallback(() => {
+    try {
+      nativeSpeechCleanupRef.current?.();
+    } catch {}
+    nativeSpeechCleanupRef.current = null;
+  }, []);
+
   const hardResetBuffers = useCallback(() => {
     finalTextRef.current = '';
     displayTextRef.current = '';
@@ -512,8 +544,9 @@ function useSpeechInput({ sourceLang, delayMs, onSend }) {
     try {
       recognitionRef.current?.stop();
     } catch {}
+    clearNativeSpeechListeners();
     setIsRecording(false);
-  }, []);
+  }, [clearNativeSpeechListeners]);
 
   const stopAndSend = useCallback(
     (forcedText) => {
@@ -532,7 +565,63 @@ function useSpeechInput({ sourceLang, delayMs, onSend }) {
     [clearAutoTimer, onSend, stopRecognitionOnly]
   );
 
+  const startNativeRecording = useCallback(() => {
+    const bridge = getTangSengSpeechBridge();
+    if (!bridge) return false;
+
+    playBeep();
+    hardResetBuffers();
+    clearAutoTimer();
+    clearNativeSpeechListeners();
+    setIsRecording(true);
+
+    const handleNativeResult = (event) => {
+      const text = readNativeSpeechText(event).trim();
+      if (!text || hasAutoSentRef.current) return;
+
+      finalTextRef.current = text;
+      displayTextRef.current = text;
+      setDisplayValue(text);
+
+      clearAutoTimer();
+      autoSendTimerRef.current = setTimeout(() => {
+        if (!hasAutoSentRef.current) stopAndSend(text);
+      }, delayMs);
+    };
+
+    const handleNativeError = (event) => {
+      const message = event?.detail?.message || '语音识别失败';
+      console.warn('[TangSengSpeech]', message);
+      clearAutoTimer();
+      clearNativeSpeechListeners();
+      setIsRecording(false);
+    };
+
+    window.addEventListener('TangSengSpeechResult', handleNativeResult);
+    window.addEventListener('TangSengSpeechError', handleNativeError);
+    nativeSpeechCleanupRef.current = () => {
+      window.removeEventListener('TangSengSpeechResult', handleNativeResult);
+      window.removeEventListener('TangSengSpeechError', handleNativeError);
+    };
+
+    try {
+      if (typeof bridge.startRecognition === 'function') {
+        bridge.startRecognition();
+      } else {
+        bridge.startSpeech();
+      }
+      return true;
+    } catch (error) {
+      console.warn('[TangSengSpeech] start failed', error);
+      clearNativeSpeechListeners();
+      setIsRecording(false);
+      return false;
+    }
+  }, [clearAutoTimer, clearNativeSpeechListeners, delayMs, hardResetBuffers, stopAndSend]);
+
   const startRecording = useCallback(() => {
+    if (startNativeRecording()) return;
+
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       alert('当前浏览器不支持语音输入');
@@ -587,7 +676,7 @@ function useSpeechInput({ sourceLang, delayMs, onSend }) {
     };
 
     recognition.start();
-  }, [clearAutoTimer, delayMs, hardResetBuffers, sourceLang, stopAndSend]);
+  }, [clearAutoTimer, delayMs, hardResetBuffers, sourceLang, startNativeRecording, stopAndSend]);
 
   const stopRecording = useCallback(() => {
     stopAndSend(displayTextRef.current);
@@ -602,11 +691,12 @@ function useSpeechInput({ sourceLang, delayMs, onSend }) {
   useEffect(() => {
     return () => {
       clearAutoTimer();
+      clearNativeSpeechListeners();
       try {
         recognitionRef.current?.stop();
       } catch {}
     };
-  }, [clearAutoTimer]);
+  }, [clearAutoTimer, clearNativeSpeechListeners]);
 
   return {
     isRecording,
