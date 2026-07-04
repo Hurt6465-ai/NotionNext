@@ -34,14 +34,14 @@ const TTS_VOICES = {
 const TEACHER_FALLBACK_IMAGE_URL =
   'https://audio.886.best/chinese-vocab-audio/%E5%9B%BE%E7%89%87/1765952194374.png';
 
-// 人物图放在前端 public/images 目录。
-// 注意：如果 PNG 本身不是透明背景，代码无法真正抠透明，需要重新导出透明 PNG。
+// 把 5 张透明 WebP 上传到 CDN 后，只需要改这里的地址。
+// 如果某张图还没上传，会自动降级到 TEACHER_FALLBACK_IMAGE_URL。
 const TEACHER_IMAGE_URLS = {
-  idle: '/images/teacher_idle.png',
-  speaking: '/images/teacher_speaking.png',
-  correct: '/images/teacher_correct.png',
-  wrong: '/images/teacher_wrong.png',
-  thinking: '/images/teacher_thinking.png',
+  idle: '/images/teacher_idle.webp',
+  speaking: '/images/teacher_speaking.webp',
+  correct: '/images/teacher_correct.webp',
+  wrong: '/images/teacher_wrong.webp',
+  thinking: '/images/teacher_thinking.webp',
 };
 
 const DEFAULT_PREFS = {
@@ -90,7 +90,7 @@ function getMergedAISettings() {
   return {
     ...DEFAULT_AI_SETTINGS,
     ...saved,
-    aiMode: saved.aiMode || DEFAULT_AI_SETTINGS.aiMode,
+    aiMode: saved.aiMode || 'api',
     vibration: saved.vibration !== false,
     soundFx: saved.soundFx !== false,
     zhVoice: saved.zhVoice || TTS_VOICES.zh,
@@ -104,7 +104,7 @@ const cssStyles = `
   font-family:"Padauk","Noto Sans SC",sans-serif;
   display:flex;
   flex-direction:column;
-  background:linear-gradient(180deg,#f8fbff 0%,#ffffff 48%,#f7fee7 100%);
+  background:transparent;
   width:100%;
   height:100%;
   position:relative;
@@ -118,7 +118,7 @@ const cssStyles = `
 }
 .xzt-header {
   flex-shrink:0;
-  padding:10px 14px 4px;
+  padding:8px 16px 2px;
   display:flex;
   justify-content:center;
 }
@@ -135,12 +135,6 @@ const cssStyles = `
   font-weight:900;
   color:#334155;
   line-height:1.2;
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-}
-.top-left-text.locked {
-  color:#2563eb;
 }
 .top-actions {
   display:flex;
@@ -167,50 +161,67 @@ const cssStyles = `
   margin-top:0;
 }
 .teacher-figure {
-  width:108px;
-  height:132px;
-  flex:0 0 108px;
-  margin-top:2px;
+  position:relative;
+  width:156px;
+  height:190px;
+  flex:0 0 156px;
+  margin-top:-10px;
   display:flex;
   align-items:flex-end;
   justify-content:center;
-  filter:drop-shadow(0 8px 12px rgba(15,23,42,0.08));
   pointer-events:none;
-  background:transparent;
+  overflow:visible;
+}
+.teacher-figure::before {
+  content:"";
+  position:absolute;
+  left:12px;
+  right:12px;
+  top:28px;
+  bottom:13px;
+  border-radius:34px;
+  background:linear-gradient(180deg, rgba(255,247,237,.96), rgba(239,246,255,.92));
+  border:1px solid rgba(203,213,225,.78);
+  box-shadow:0 14px 34px rgba(15,23,42,.10), inset 0 1px 0 rgba(255,255,255,.92);
 }
 .teacher-img {
+  position:relative;
+  z-index:1;
   width:100%;
   height:100%;
   object-fit:contain;
   flex-shrink:0;
-  background:transparent;
-  transform:scaleX(-1);
+  /* 人物原图适合放右侧时，放到左侧需要水平翻转，让脸朝向题目 */
+  transform:scaleX(-1) scale(1.18);
+  transform-origin:center bottom;
+  filter:drop-shadow(0 12px 14px rgba(15,23,42,.18));
 }
-.teacher-state-wrong {
-  width:132px;
-  height:164px;
-  flex-basis:132px;
-  margin-top:-18px;
-  margin-left:-12px;
-  margin-right:-8px;
-  filter:drop-shadow(0 10px 16px rgba(239,68,68,0.12));
+.teacher-state-correct .teacher-img {
+  transform:scaleX(-1) scale(1.22);
+}
+.teacher-state-wrong .teacher-img {
+  transform:scaleX(-1) scale(1.26);
+}
+.teacher-state-thinking .teacher-img,
+.teacher-state-speaking .teacher-img {
+  transform:scaleX(-1) scale(1.20);
 }
 @media (max-width:420px) {
   .teacher-figure {
-    width:88px;
-    height:112px;
-    flex-basis:88px;
+    width:126px;
+    height:158px;
+    flex-basis:126px;
+    margin-top:-6px;
   }
-  .teacher-state-wrong {
-    width:108px;
-    height:136px;
-    flex-basis:108px;
-    margin-top:-14px;
-    margin-left:-10px;
-    margin-right:-6px;
+  .teacher-figure::before {
+    left:9px;
+    right:9px;
+    top:22px;
+    bottom:10px;
+    border-radius:28px;
   }
   .scene-wrapper {
-    gap:6px;
+    gap:8px;
   }
 }
 .question-zone {
@@ -221,53 +232,31 @@ const cssStyles = `
   gap:10px;
 }
 
-.question-card {
+.bubble-container {
   flex:1;
   position:relative;
-  min-height:96px;
-  padding:16px 16px 16px 14px;
-  border-radius:24px;
-  border:2px solid #e0f2fe;
+  min-height:92px;
+  padding:16px 48px 16px 16px;
+  border-radius:22px;
+  border:2px solid #dbeafe;
   border-bottom-width:5px;
-  background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);
-  box-shadow:0 12px 24px rgba(37,99,235,0.08);
+  background:#ffffff;
+  box-shadow:0 8px 18px rgba(37,99,235,0.08);
   display:flex;
   align-items:center;
-  gap:12px;
-  overflow:hidden;
+  overflow:visible;
 }
-.question-audio-btn {
-  flex:0 0 42px;
-  width:42px;
-  height:42px;
-  border-radius:16px;
-  border:2px solid #bfdbfe;
-  border-bottom-width:5px;
-  background:#eff6ff;
-  color:#1d4ed8;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-  box-shadow:0 8px 16px rgba(59,130,246,.10);
-}
-.question-audio-btn.playing {
-  background:#dbeafe;
-  color:#1d4ed8;
-  border-color:#93c5fd;
-}
-.question-audio-btn:active {
-  transform:translateY(3px);
-  border-bottom-width:2px;
-}
-.listen-hint {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  color:#2563eb;
-  font-size:12px;
-  font-weight:900;
-  padding:0 4px;
+.bubble-tail {
+  position:absolute;
+  left:-9px;
+  top:31px;
+  width:16px;
+  height:16px;
+  background:#ffffff;
+  border-left:2px solid #dbeafe;
+  border-bottom:2px solid #dbeafe;
+  transform:rotate(45deg);
+  border-bottom-left-radius:4px;
 }
 
 .bubble-text {
@@ -353,6 +342,34 @@ const cssStyles = `
   line-height:1.65;
 }
 
+.bubble-audio-btn {
+  position:absolute;
+  right:12px;
+  top:12px;
+  flex-shrink:0;
+  width:31px;
+  height:31px;
+  margin:0;
+  border-radius:9999px;
+  border:2px solid #ddf4ff;
+  background:#ffffff;
+  color:#1cb0f6;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 3px 0 #ddf4ff;
+}
+.bubble-audio-btn.playing {
+  background:#ddf4ff;
+  color:#1cb0f6;
+  border-color:#84d8ff;
+  box-shadow:0 3px 0 #84d8ff;
+}
+.bubble-audio-btn:active {
+  transform:translateY(3px);
+  box-shadow:none;
+}
 
 .question-image {
   width:100%;
@@ -387,8 +404,8 @@ const cssStyles = `
 
 .option-card {
   background:#fff;
-  border-radius:18px;
-  padding:15px;
+  border-radius:16px;
+  padding:14px;
   border:2px solid #e5e7eb;
   border-bottom-width:5px;
   cursor:pointer;
@@ -396,11 +413,11 @@ const cssStyles = `
   display:flex;
   align-items:center;
   justify-content:center;
-  min-height:72px;
+  min-height:68px;
   position:relative;
   user-select:none;
   -webkit-tap-highlight-color:transparent;
-  box-shadow:0 8px 20px rgba(15,23,42,0.04);
+  box-shadow:0 2px 0 rgba(0,0,0,0.02);
 }
 .option-card:active {
   transform:translateY(2px);
@@ -429,18 +446,6 @@ const cssStyles = `
 .option-card.locked {
   cursor:default;
   transform:none;
-}
-.option-card.disabled {
-  cursor:not-allowed;
-  opacity:.48;
-  filter:grayscale(.15);
-  background:#f8fafc;
-  border-color:#e2e8f0;
-  color:#94a3b8;
-}
-.option-card.disabled:active {
-  transform:none;
-  border-bottom-width:5px;
 }
 .option-card.has-image-layout {
   flex-direction:column;
@@ -842,11 +847,6 @@ function playBeep(type = 'tap') {
         ? [
             { frequency: 240, start: 0, duration: 0.1, volume: 0.055 },
             { frequency: 170, start: 0.11, duration: 0.14, volume: 0.05 },
-          ]
-        : type === 'submit'
-        ? [
-            { frequency: 560, start: 0, duration: 0.055, volume: 0.035 },
-            { frequency: 700, start: 0.055, duration: 0.06, volume: 0.03 },
           ]
         : [{ frequency: 520, start: 0, duration: 0.06, volume: 0.03 }];
 
@@ -1443,6 +1443,33 @@ function buildChoiceQuestionPayloadForDeepSeek({
   return `${qText}||${wrongText}||${correctText}`;
 }
 
+function buildSimilarQuestionGenerationPrompt({ questionText, options, correctAnswers }) {
+  return [
+    '你现在不是讲题，而是生成一道新的互动选择题。',
+    '请根据下面原题生成一道同类型、同难度的新题。',
+    '',
+    '必须只输出合法 JSON，不要 Markdown，不要代码块，不要解释。',
+    'JSON 必须符合这个结构：',
+    CHOICE_QUESTION_SCHEMA_TEXT.trim(),
+    '',
+    '规则：',
+    '1. options 必须是 A、B、C、D 四个选项。',
+    '2. correctAnswer 必须是 A/B/C/D 之一。',
+    '3. 题干和选项适合直接给 React 选择题组件渲染。',
+    '4. explanation 要简短，适合作为题库解析。',
+    '5. 不要复用原题原句，要生成新的题。',
+    '',
+    '原题：',
+    questionText || '',
+    '',
+    '原选项：',
+    options.map((option) => `${normalizeOptionId(option.id)}. ${option.text || ''}`).join('\n'),
+    '',
+    '原正确答案：',
+    correctAnswers.join(', '),
+  ].join('\n');
+}
+
 function useTimeoutManager() {
   const timeoutsRef = useRef(new Set());
 
@@ -1694,7 +1721,6 @@ const OptionCard = memo(function OptionCard({
   isCorrectAnswer,
   isSpeaking,
   isBouncing,
-  isDisabled,
   showPinyin,
   onToggle,
 }) {
@@ -1704,8 +1730,7 @@ const OptionCard = memo(function OptionCard({
   const className = useMemo(() => {
     let cls = 'option-card';
     if (hasImage) cls += ' has-image-layout';
-    if (isBouncing && !isDisabled) cls += ' bounce-in';
-    if (isDisabled && !isSubmitted) cls += ' disabled';
+    if (isBouncing) cls += ' bounce-in';
 
     if (isSubmitted) {
       cls += ' locked';
@@ -1718,7 +1743,7 @@ const OptionCard = memo(function OptionCard({
     }
 
     return cls;
-  }, [hasImage, isBouncing, isCorrectAnswer, isDisabled, isSelected, isSpeaking, isSubmitted]);
+  }, [hasImage, isBouncing, isCorrectAnswer, isSelected, isSpeaking, isSubmitted]);
 
   const optionPinyin = useMemo(() => {
     if (!showPinyin || !containsChinese(option.text)) return '';
@@ -1726,12 +1751,7 @@ const OptionCard = memo(function OptionCard({
   }, [option.text, showPinyin]);
 
   return (
-    <button
-      className={className}
-      disabled={isDisabled && !isSubmitted}
-      onClick={() => onToggle(optionId)}
-      type="button"
-    >
+    <button className={className} onClick={() => onToggle(optionId)} type="button">
       {isSpeaking ? (
         <FaSpinner className="absolute top-3 right-3 text-blue-500 animate-spin" />
       ) : null}
@@ -1809,7 +1829,6 @@ export default function XuanZeTi({
   const [questionImgVisible, setQuestionImgVisible] = useState(Boolean(questionImg));
   const [showAIExplanation, setShowAIExplanation] = useState(false);
   const [isDeepSeekOpening, setIsDeepSeekOpening] = useState(false);
-  const [questionReadDone, setQuestionReadDone] = useState(!questionText);
 
   const [prefs, setPrefs] = useState(() => getMergedPrefs());
   const [aiSettings, setAISettings] = useState(() => getMergedAISettings());
@@ -1909,11 +1928,6 @@ export default function XuanZeTi({
     if (aiSettings.soundFx) playBeep('tap');
   }, [aiSettings.soundFx, aiSettings.vibration]);
 
-  const feedbackSubmit = useCallback(() => {
-    if (aiSettings.vibration) vibrate(18);
-    if (aiSettings.soundFx) playBeep('submit');
-  }, [aiSettings.soundFx, aiSettings.vibration]);
-
   const feedbackCorrect = useCallback(() => {
     if (aiSettings.vibration) vibrate([30, 40, 30]);
     if (aiSettings.soundFx) playBeep('correct');
@@ -1932,11 +1946,7 @@ export default function XuanZeTi({
       questionText,
       { rate: currentRate, aiSettings },
       () => mountedRef.current && setIsQuestionPlaying(true),
-      () => {
-        if (!mountedRef.current) return;
-        setIsQuestionPlaying(false);
-        setQuestionReadDone(true);
-      }
+      () => mountedRef.current && setIsQuestionPlaying(false)
     );
   }, [aiSettings, currentRate, questionText]);
 
@@ -1967,7 +1977,6 @@ export default function XuanZeTi({
     setCardPopId(null);
     setShowAIExplanation(false);
     setIsDeepSeekOpening(false);
-    setQuestionReadDone(!questionText);
     resetOverlayStack();
 
     if (questionText && autoPlayRef.current) {
@@ -1976,11 +1985,7 @@ export default function XuanZeTi({
           questionText,
           { rate: currentRateRef.current, aiSettings: aiSettingsRef.current },
           () => mountedRef.current && setIsQuestionPlaying(true),
-          () => {
-            if (!mountedRef.current) return;
-            setIsQuestionPlaying(false);
-            setQuestionReadDone(true);
-          }
+          () => mountedRef.current && setIsQuestionPlaying(false)
         );
       }, 260);
     }
@@ -2017,7 +2022,7 @@ export default function XuanZeTi({
 
   const toggleOption = useCallback(
     (optionId) => {
-      if (isSubmitted || !questionReadDone) return;
+      if (isSubmitted) return;
 
       feedbackTap();
 
@@ -2047,16 +2052,13 @@ export default function XuanZeTi({
       correctAnswers.length,
       feedbackTap,
       isSubmitted,
-      questionReadDone,
       playOptionText,
       shuffledOptions,
     ]
   );
 
   const handleSubmit = useCallback(() => {
-    if (!selectedIds.length || isSubmitted || !questionReadDone) return;
-
-    feedbackSubmit();
+    if (!selectedIds.length || isSubmitted) return;
 
     const correct =
       selectedIds.length === correctAnswers.length &&
@@ -2078,12 +2080,10 @@ export default function XuanZeTi({
   }, [
     correctAnswers,
     feedbackCorrect,
-    feedbackSubmit,
     feedbackWrong,
     isSubmitted,
     onCorrect,
     onWrong,
-    questionReadDone,
     selectedIds,
     stopAllAudio,
   ]);
@@ -2144,6 +2144,22 @@ export default function XuanZeTi({
     stopAllAudio,
   ]);
 
+  const handleGenerateSimilarQuestion = useCallback(() => {
+    stopAllAudio();
+
+    const generationPrompt = buildSimilarQuestionGenerationPrompt({
+      questionText,
+      options: shuffledOptions,
+      correctAnswers,
+    });
+
+    const payload = `${generationPrompt}||生成同类互动选择题||只输出组件可用 JSON`;
+    openDeepSeekQuestionMode({
+      title: 'DeepSeek 出同类题',
+      prompt: payload,
+      mode: 'question',
+    });
+  }, [correctAnswers, questionText, shuffledOptions, stopAllAudio]);
 
   const handleOpenAIExplanation = useCallback(() => {
     stopAllAudio();
@@ -2168,9 +2184,7 @@ export default function XuanZeTi({
       <div className="xzt-header">
         <div className="w-full relative">
           <div className="top-hint-row">
-            <div className={`top-left-text ${questionReadDone ? '' : 'locked'}`}>
-              {questionReadDone ? '请选择正确答案' : '先听一遍题目，再选择答案'}
-            </div>
+            <div className="top-left-text">请选择正确答案</div>
 
             <div className="top-actions">
               <button className="settings-btn" onClick={handleOpenSettings} type="button">
@@ -2183,18 +2197,20 @@ export default function XuanZeTi({
             <AnimatedTeacher state={teacherState} />
 
             <div className="question-zone">
-              <div className="question-card">
+              <div className="bubble-container">
+                <div className="bubble-tail" />
+
                 {questionText ? (
                   <button
-                    className={`question-audio-btn ${isQuestionPlaying ? 'playing' : ''}`}
+                    className={`bubble-audio-btn ${isQuestionPlaying ? 'playing' : ''}`}
                     onClick={playQuestion}
                     aria-label="播放题干"
                     type="button"
                   >
                     {isQuestionPlaying ? (
-                      <FaSpinner className="animate-spin" size={14} />
+                      <FaSpinner className="animate-spin" size={12} />
                     ) : (
-                      <FaVolumeUp size={15} />
+                      <FaVolumeUp size={12} />
                     )}
                   </button>
                 ) : null}
@@ -2208,10 +2224,6 @@ export default function XuanZeTi({
                   )}
                 </div>
               </div>
-
-              {!questionReadDone ? (
-                <div className="listen-hint">🔊 题目朗读完成后才可以选择答案</div>
-              ) : null}
 
               {questionImg && questionImgVisible ? (
                 <img
@@ -2240,7 +2252,6 @@ export default function XuanZeTi({
                 isCorrectAnswer={correctAnswers.includes(optionId)}
                 isSpeaking={speakingOptionId === optionId}
                 isBouncing={cardPopId === optionId}
-                isDisabled={!questionReadDone}
                 showPinyin={prefs.showOptionPinyin}
                 onToggle={toggleOption}
               />
@@ -2253,11 +2264,11 @@ export default function XuanZeTi({
         <div className="submit-bar">
           <button
             className="submit-btn"
-            disabled={!questionReadDone || !selectedIds.length}
+            disabled={!selectedIds.length}
             onClick={handleSubmit}
             type="button"
           >
-            {questionReadDone ? '检查答案' : '请先听题'}
+            检查答案
           </button>
         </div>
       ) : null}
@@ -2279,6 +2290,10 @@ export default function XuanZeTi({
         <div className="result-actions">
           <button className="ai-btn" onClick={handleOpenAIExplanation} type="button">
             <FaRobot /> {aiMode === 'deepseek' ? 'DeepSeek 解析' : isRight ? '为什么对？' : 'AI 解析'}
+          </button>
+
+          <button className="ai-btn secondary" onClick={handleGenerateSimilarQuestion} type="button">
+            <FaRobot /> DeepSeek 出同类题
           </button>
         </div>
 
