@@ -1069,6 +1069,150 @@ async function getTTSBlob(
   return blob;
 }
 
+function getWindowCandidatesForSpeech() {
+  if (typeof window === 'undefined') return [];
+
+  const list = [];
+  const add = (item) => {
+    if (item && !list.includes(item)) list.push(item);
+  };
+
+  try { add(window); } catch (_) {}
+  try { add(globalThis); } catch (_) {}
+  try { if (window.top && window.top !== window) add(window.top); } catch (_) {}
+  return list;
+}
+
+function getNativeSpeechBridgeForQuiz() {
+  const names = [
+    'TsddSpeech',
+    'TsddWKSpeech',
+    'TsddWkSpeech',
+    'TsddSpeechBridge',
+    'WKSpeech',
+    'WkSpeech',
+    'wkSpeech',
+    'wkspeech',
+    'WKSpeechBridge',
+    'WkSpeechBridge',
+    'AndroidSpeech',
+    'AndroidTTS',
+    'AndroidWkSpeech',
+    'Android',
+    'AppSpeech',
+    'NativeSpeech',
+  ];
+
+  for (const root of getWindowCandidatesForSpeech()) {
+    for (const name of names) {
+      let bridge = null;
+      try {
+        bridge = root?.[name];
+      } catch (_) {
+        bridge = null;
+      }
+
+      if (!bridge) continue;
+
+      const usable =
+        typeof bridge.speak === 'function' ||
+        typeof bridge.speakJson === 'function' ||
+        typeof bridge.speakStream === 'function' ||
+        typeof bridge.speakMixed === 'function' ||
+        typeof bridge.speakPayload === 'function' ||
+        typeof bridge.readJson === 'function' ||
+        typeof bridge.tts === 'function';
+
+      if (!usable) continue;
+
+      try {
+        if (typeof bridge.isAvailable === 'function' && bridge.isAvailable() === false) continue;
+      } catch (_) {}
+
+      return bridge;
+    }
+  }
+
+  return null;
+}
+
+function stopNativeSpeechForQuiz() {
+  const bridge = getNativeSpeechBridgeForQuiz();
+  if (!bridge) return false;
+
+  const methods = ['stop', 'cancel', 'stopSpeech', 'stopTTS', 'stopSpeak', 'stopWkSpeech', 'pause'];
+  for (const method of methods) {
+    try {
+      if (typeof bridge[method] === 'function') {
+        bridge[method]();
+        return true;
+      }
+    } catch (_) {}
+  }
+
+  return false;
+}
+
+function normalizeNativeTtsLang(lang) {
+  if (lang === 'zh') return 'zh-CN';
+  if (lang === 'my') return 'my-MM';
+  if (lang === 'en') return 'en-US';
+  return lang || 'zh-CN';
+}
+
+function estimateNativeTtsMs(text = '') {
+  const value = String(text || '');
+  const cjk = (value.match(/[\u3400-\u9FFF\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]/g) || []).length;
+  const latin = (value.match(/[A-Za-z0-9]/g) || []).length;
+  const other = Math.max(0, value.length - cjk - latin);
+  return Math.min(180000, Math.max(1800, cjk * 240 + latin * 80 + other * 90 + 1200));
+}
+
+function callNativeWkSpeechForQuiz(text, units, { rate = 0 } = {}) {
+  const bridge = getNativeSpeechBridgeForQuiz();
+  if (!bridge) return false;
+
+  const safeText = normalizeTtsText(text);
+  if (!safeText) return false;
+
+  const segments = (Array.isArray(units) && units.length ? units : buildTTSUnits(safeText)).map((unit) => ({
+    text: unit.text,
+    lang: normalizeNativeTtsLang(unit.lang),
+  }));
+
+  const payload = {
+    action: 'speak',
+    source: 'xuan-ze-ti',
+    text: safeText,
+    lang: segments[0]?.lang || 'zh-CN',
+    mixed: true,
+    stream: true,
+    segments,
+    rate,
+  };
+
+  const json = JSON.stringify(payload);
+  const jsonMethods = ['speakStream', 'speakMixed', 'speakJson', 'speakPayload', 'readJson', 'tts'];
+
+  for (const method of jsonMethods) {
+    try {
+      if (typeof bridge[method] === 'function') {
+        bridge[method](json);
+        return true;
+      }
+    } catch (_) {}
+  }
+
+  try {
+    if (typeof bridge.speak === 'function') {
+      bridge.speak(safeText);
+      return true;
+    }
+  } catch (_) {}
+
+  return false;
+}
+
 class AudioPlaybackController {
   constructor() {
     this.currentAudio = null;
@@ -1077,10 +1221,18 @@ class AudioPlaybackController {
     this.prefetchMap = new Map();
     this.abortController = null;
     this.stopCurrentAudio = null;
+    this.nativeTimer = null;
   }
 
   stop() {
     this.latestRequestId += 1;
+
+    if (this.nativeTimer) {
+      clearTimeout(this.nativeTimer);
+      this.nativeTimer = null;
+    }
+
+    stopNativeSpeechForQuiz();
 
     if (this.abortController) {
       try {
@@ -1186,6 +1338,43 @@ class AudioPlaybackController {
     });
   }
 
+  playNative(raw, units, { rate = 0 } = {}, onStart, onEnd) {
+    const requestId = this.latestRequestId;
+
+    if (!callNativeWkSpeechForQuiz(raw, units, { rate })) {
+      return false;
+    }
+
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+
+      if (this.nativeTimer) {
+        clearTimeout(this.nativeTimer);
+        this.nativeTimer = null;
+      }
+
+      if (this.stopCurrentAudio === stopThisNative) {
+        this.stopCurrentAudio = null;
+      }
+
+      if (requestId === this.latestRequestId) {
+        onEnd?.();
+      }
+    };
+
+    const stopThisNative = () => {
+      stopNativeSpeechForQuiz();
+      finish();
+    };
+
+    this.stopCurrentAudio = stopThisNative;
+    onStart?.();
+    this.nativeTimer = setTimeout(finish, estimateNativeTtsMs(raw));
+    return true;
+  }
+
   async playMixed(text, { rate = 0, aiSettings = null } = {}, onStart, onEnd) {
     this.stop();
 
@@ -1196,14 +1385,21 @@ class AudioPlaybackController {
     }
 
     const requestId = this.latestRequestId;
-    const controller = new AbortController();
-    this.abortController = controller;
 
     const units = buildTTSUnits(raw);
     if (!units.length) {
       onEnd?.();
       return;
     }
+
+    // 在唐僧叨叨 App 的 AiScriptWebActivity 里优先走原生 wkspeech。
+    // 普通浏览器没有 TsddSpeech 桥时，自动退回原来的 H5 在线 TTS。
+    if (this.playNative(raw, units, { rate }, onStart, onEnd)) {
+      return;
+    }
+
+    const controller = new AbortController();
+    this.abortController = controller;
 
     const apiUrl = aiSettings?.ttsApiUrl || DEFAULT_AI_SETTINGS.ttsApiUrl;
 
