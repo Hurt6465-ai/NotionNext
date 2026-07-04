@@ -31,8 +31,18 @@ const TTS_VOICES = {
   en: 'en-US-JennyNeural',
 };
 
-const TEACHER_IMAGE_URL =
+const TEACHER_FALLBACK_IMAGE_URL =
   'https://audio.886.best/chinese-vocab-audio/%E5%9B%BE%E7%89%87/1765952194374.png';
+
+// 把 5 张透明 WebP 上传到 CDN 后，只需要改这里的地址。
+// 如果某张图还没上传，会自动降级到 TEACHER_FALLBACK_IMAGE_URL。
+const TEACHER_IMAGE_URLS = {
+  idle: '/images/teacher_idle.webp',
+  speaking: '/images/teacher_speaking.webp',
+  correct: '/images/teacher_correct.webp',
+  wrong: '/images/teacher_wrong.webp',
+  thinking: '/images/teacher_thinking.webp',
+};
 
 const DEFAULT_PREFS = {
   showQuestionPinyin: true,
@@ -42,7 +52,7 @@ const DEFAULT_PREFS = {
 };
 
 const DEFAULT_AI_SETTINGS = {
-  aiMode: 'api', // api | deepseek
+  aiMode: 'deepseek', // api | deepseek
   vibration: true,
   soundFx: true,
   ttsApiUrl: 'https://t.leftsite.cn/tts',
@@ -150,12 +160,74 @@ const cssStyles = `
   gap:10px;
   margin-top:0;
 }
+.teacher-figure {
+  width:108px;
+  height:132px;
+  flex:0 0 108px;
+  margin-top:2px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  filter:drop-shadow(0 8px 12px rgba(15,23,42,0.08));
+  transform-origin:50% 88%;
+  pointer-events:none;
+}
 .teacher-img {
-  height:116px;
+  width:100%;
+  height:100%;
   object-fit:contain;
   flex-shrink:0;
-  margin-top:14px;
-  filter:drop-shadow(0 8px 12px rgba(15,23,42,0.08));
+  /* 人物原图适合放右侧时，放到左侧需要水平翻转，让脸朝向题目气泡 */
+  transform:scaleX(-1);
+}
+.teacher-state-idle {
+  animation:xzt-teacher-idle 2.8s ease-in-out infinite;
+}
+.teacher-state-speaking {
+  animation:xzt-teacher-speaking .42s ease-in-out infinite;
+}
+.teacher-state-correct {
+  animation:xzt-teacher-correct .62s cubic-bezier(.2,1.35,.32,1) 1;
+}
+.teacher-state-wrong {
+  animation:xzt-teacher-wrong .58s ease-in-out 1;
+}
+.teacher-state-thinking {
+  animation:xzt-teacher-thinking 1.25s ease-in-out infinite;
+}
+@keyframes xzt-teacher-idle {
+  0%,100% { transform:translateY(0) rotate(0deg); }
+  50% { transform:translateY(-4px) rotate(-1deg); }
+}
+@keyframes xzt-teacher-speaking {
+  0%,100% { transform:translateY(0) scale(1); }
+  50% { transform:translateY(-3px) scale(1.035); }
+}
+@keyframes xzt-teacher-correct {
+  0% { transform:translateY(0) scale(.96) rotate(0deg); }
+  45% { transform:translateY(-12px) scale(1.12) rotate(-4deg); }
+  75% { transform:translateY(2px) scale(.99) rotate(2deg); }
+  100% { transform:translateY(0) scale(1) rotate(0deg); }
+}
+@keyframes xzt-teacher-wrong {
+  0%,100% { transform:translateX(0) translateY(0) rotate(0deg); }
+  20% { transform:translateX(-3px) translateY(3px) rotate(-2deg); }
+  45% { transform:translateX(4px) translateY(5px) rotate(2deg); }
+  70% { transform:translateX(-2px) translateY(3px) rotate(-1deg); }
+}
+@keyframes xzt-teacher-thinking {
+  0%,100% { transform:translateY(0) rotate(-2deg); }
+  50% { transform:translateY(-3px) rotate(3deg); }
+}
+@media (max-width:420px) {
+  .teacher-figure {
+    width:88px;
+    height:112px;
+    flex-basis:88px;
+  }
+  .scene-wrapper {
+    gap:6px;
+  }
 }
 .question-zone {
   flex:1;
@@ -1306,8 +1378,10 @@ function normalizeCorrectAnswers(raw) {
   return list.map(normalizeOptionId).filter(Boolean);
 }
 
-function makeDeepSeekAutoPromptUrl(payload) {
-  return `https://chat.deepseek.com/?auto_prompt=${encodeURIComponent(payload)}`;
+function makeDeepSeekAutoPromptUrl(payload, mode = 'question') {
+  const query = `auto_prompt=${encodeURIComponent(payload || '')}`;
+  const hash = `tsdd_mode=${encodeURIComponent(mode || 'question')}`;
+  return `https://chat.deepseek.com/?${query}#${hash}`;
 }
 
 function openUrlWithFallback(url) {
@@ -1317,6 +1391,26 @@ function openUrlWithFallback(url) {
   if (!opened) {
     window.location.href = url;
   }
+}
+
+function openDeepSeekQuestionMode({ title = '互动题解析', prompt = '', mode = 'question' }) {
+  if (typeof window === 'undefined') return;
+
+  const url = makeDeepSeekAutoPromptUrl(prompt, mode);
+
+  try {
+    if (window.TsddAI && typeof window.TsddAI.openDeepSeek === 'function') {
+      window.TsddAI.openDeepSeek(JSON.stringify({ title, prompt, mode, url }));
+      return;
+    }
+
+    if (window.TsddAI && typeof window.TsddAI.openDeepSeekQuestion === 'function') {
+      window.TsddAI.openDeepSeekQuestion(prompt);
+      return;
+    }
+  } catch (_) {}
+
+  openUrlWithFallback(url);
 }
 
 function buildChoiceQuestionPayloadForDeepSeek({
@@ -1446,6 +1540,31 @@ function useOverlayHistory() {
     closeTopOverlay: closeTop,
     resetOverlayStack: reset,
   };
+}
+
+
+function AnimatedTeacher({ state = 'idle' }) {
+  const safeState = TEACHER_IMAGE_URLS[state] ? state : 'idle';
+  const [src, setSrc] = useState(TEACHER_IMAGE_URLS[safeState] || TEACHER_FALLBACK_IMAGE_URL);
+
+  useEffect(() => {
+    setSrc(TEACHER_IMAGE_URLS[safeState] || TEACHER_FALLBACK_IMAGE_URL);
+  }, [safeState]);
+
+  return (
+    <div className={`teacher-figure teacher-state-${safeState}`} aria-hidden="true">
+      <img
+        src={src}
+        className="teacher-img"
+        alt="Teacher"
+        onError={() => {
+          if (src !== TEACHER_FALLBACK_IMAGE_URL) {
+            setSrc(TEACHER_FALLBACK_IMAGE_URL);
+          }
+        }}
+      />
+    </div>
+  );
 }
 
 const SettingsPanel = memo(function SettingsPanel({
@@ -1714,6 +1833,7 @@ export default function XuanZeTi({
   const [cardPopId, setCardPopId] = useState(null);
   const [questionImgVisible, setQuestionImgVisible] = useState(Boolean(questionImg));
   const [showAIExplanation, setShowAIExplanation] = useState(false);
+  const [isDeepSeekOpening, setIsDeepSeekOpening] = useState(false);
 
   const [prefs, setPrefs] = useState(() => getMergedPrefs());
   const [aiSettings, setAISettings] = useState(() => getMergedAISettings());
@@ -1794,6 +1914,13 @@ export default function XuanZeTi({
     [hasMyanmar, isLongQuestion, isVeryLongQuestion]
   );
 
+  const teacherState = useMemo(() => {
+    if (isDeepSeekOpening || showAIExplanation) return 'thinking';
+    if (isQuestionPlaying || speakingOptionId) return 'speaking';
+    if (isSubmitted) return isRight ? 'correct' : 'wrong';
+    return 'idle';
+  }, [isDeepSeekOpening, isQuestionPlaying, isRight, isSubmitted, showAIExplanation, speakingOptionId]);
+
   const stopAllAudio = useCallback(() => {
     audioControllerRef.current.stop();
     setIsQuestionPlaying(false);
@@ -1853,6 +1980,7 @@ export default function XuanZeTi({
     setShowSettings(false);
     setCardPopId(null);
     setShowAIExplanation(false);
+    setIsDeepSeekOpening(false);
     resetOverlayStack();
 
     if (questionText && autoPlayRef.current) {
@@ -1991,6 +2119,7 @@ export default function XuanZeTi({
 
   const handleOpenDeepSeekWeb = useCallback(() => {
     stopAllAudio();
+    setIsDeepSeekOpening(true);
 
     const payload = buildChoiceQuestionPayloadForDeepSeek({
       questionText,
@@ -2000,8 +2129,17 @@ export default function XuanZeTi({
       correctAnswers,
     });
 
-    openUrlWithFallback(makeDeepSeekAutoPromptUrl(payload));
+    openDeepSeekQuestionMode({
+      title: '互动题解析',
+      prompt: payload,
+      mode: 'question',
+    });
+
+    addTimeout(() => {
+      if (mountedRef.current) setIsDeepSeekOpening(false);
+    }, 900);
   }, [
+    addTimeout,
     correctAnswers,
     questionImg,
     questionText,
@@ -2020,7 +2158,11 @@ export default function XuanZeTi({
     });
 
     const payload = `${generationPrompt}||生成同类互动选择题||只输出组件可用 JSON`;
-    openUrlWithFallback(makeDeepSeekAutoPromptUrl(payload));
+    openDeepSeekQuestionMode({
+      title: 'DeepSeek 出同类题',
+      prompt: payload,
+      mode: 'question',
+    });
   }, [correctAnswers, questionText, shuffledOptions, stopAllAudio]);
 
   const handleOpenAIExplanation = useCallback(() => {
@@ -2056,14 +2198,7 @@ export default function XuanZeTi({
           </div>
 
           <div className="scene-wrapper">
-            <img
-              src={TEACHER_IMAGE_URL}
-              className="teacher-img"
-              alt="Teacher"
-              onError={(event) => {
-                event.currentTarget.style.display = 'none';
-              }}
-            />
+            <AnimatedTeacher state={teacherState} />
 
             <div className="question-zone">
               <div className="bubble-container">
