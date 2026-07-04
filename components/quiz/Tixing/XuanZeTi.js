@@ -34,14 +34,14 @@ const TTS_VOICES = {
 const TEACHER_FALLBACK_IMAGE_URL =
   'https://audio.886.best/chinese-vocab-audio/%E5%9B%BE%E7%89%87/1765952194374.png';
 
-// 把 5 张透明 WebP 上传到 CDN 后，只需要改这里的地址。
-// 如果某张图还没上传，会自动降级到 TEACHER_FALLBACK_IMAGE_URL。
+// 人物图放在前端 public/images 目录。
+// 注意：如果 PNG 本身不是透明背景，代码无法真正抠透明，需要重新导出透明 PNG。
 const TEACHER_IMAGE_URLS = {
-  idle: '/images/teacher_idle.webp',
-  speaking: '/images/teacher_speaking.webp',
-  correct: '/images/teacher_correct.webp',
-  wrong: '/images/teacher_wrong.webp',
-  thinking: '/images/teacher_thinking.webp',
+  idle: '/images/teacher_idle.png',
+  speaking: '/images/teacher_speaking.png',
+  correct: '/images/teacher_correct.png',
+  wrong: '/images/teacher_wrong.png',
+  thinking: '/images/teacher_thinking.png',
 };
 
 const DEFAULT_PREFS = {
@@ -90,7 +90,7 @@ function getMergedAISettings() {
   return {
     ...DEFAULT_AI_SETTINGS,
     ...saved,
-    aiMode: saved.aiMode || 'api',
+    aiMode: saved.aiMode || DEFAULT_AI_SETTINGS.aiMode,
     vibration: saved.vibration !== false,
     soundFx: saved.soundFx !== false,
     zhVoice: saved.zhVoice || TTS_VOICES.zh,
@@ -104,7 +104,7 @@ const cssStyles = `
   font-family:"Padauk","Noto Sans SC",sans-serif;
   display:flex;
   flex-direction:column;
-  background:transparent;
+  background:linear-gradient(180deg,#f8fbff 0%,#ffffff 48%,#f7fee7 100%);
   width:100%;
   height:100%;
   position:relative;
@@ -118,7 +118,7 @@ const cssStyles = `
 }
 .xzt-header {
   flex-shrink:0;
-  padding:8px 16px 2px;
+  padding:10px 14px 4px;
   display:flex;
   justify-content:center;
 }
@@ -135,6 +135,12 @@ const cssStyles = `
   font-weight:900;
   color:#334155;
   line-height:1.2;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+.top-left-text.locked {
+  color:#2563eb;
 }
 .top-actions {
   display:flex;
@@ -169,61 +175,39 @@ const cssStyles = `
   align-items:flex-end;
   justify-content:center;
   filter:drop-shadow(0 8px 12px rgba(15,23,42,0.08));
-  transform-origin:50% 88%;
   pointer-events:none;
+  background:transparent;
 }
 .teacher-img {
   width:100%;
   height:100%;
   object-fit:contain;
   flex-shrink:0;
-  /* 人物原图适合放右侧时，放到左侧需要水平翻转，让脸朝向题目气泡 */
+  background:transparent;
   transform:scaleX(-1);
 }
-.teacher-state-idle {
-  animation:xzt-teacher-idle 2.8s ease-in-out infinite;
-}
-.teacher-state-speaking {
-  animation:xzt-teacher-speaking .42s ease-in-out infinite;
-}
-.teacher-state-correct {
-  animation:xzt-teacher-correct .62s cubic-bezier(.2,1.35,.32,1) 1;
-}
 .teacher-state-wrong {
-  animation:xzt-teacher-wrong .58s ease-in-out 1;
-}
-.teacher-state-thinking {
-  animation:xzt-teacher-thinking 1.25s ease-in-out infinite;
-}
-@keyframes xzt-teacher-idle {
-  0%,100% { transform:translateY(0) rotate(0deg); }
-  50% { transform:translateY(-4px) rotate(-1deg); }
-}
-@keyframes xzt-teacher-speaking {
-  0%,100% { transform:translateY(0) scale(1); }
-  50% { transform:translateY(-3px) scale(1.035); }
-}
-@keyframes xzt-teacher-correct {
-  0% { transform:translateY(0) scale(.96) rotate(0deg); }
-  45% { transform:translateY(-12px) scale(1.12) rotate(-4deg); }
-  75% { transform:translateY(2px) scale(.99) rotate(2deg); }
-  100% { transform:translateY(0) scale(1) rotate(0deg); }
-}
-@keyframes xzt-teacher-wrong {
-  0%,100% { transform:translateX(0) translateY(0) rotate(0deg); }
-  20% { transform:translateX(-3px) translateY(3px) rotate(-2deg); }
-  45% { transform:translateX(4px) translateY(5px) rotate(2deg); }
-  70% { transform:translateX(-2px) translateY(3px) rotate(-1deg); }
-}
-@keyframes xzt-teacher-thinking {
-  0%,100% { transform:translateY(0) rotate(-2deg); }
-  50% { transform:translateY(-3px) rotate(3deg); }
+  width:132px;
+  height:164px;
+  flex-basis:132px;
+  margin-top:-18px;
+  margin-left:-12px;
+  margin-right:-8px;
+  filter:drop-shadow(0 10px 16px rgba(239,68,68,0.12));
 }
 @media (max-width:420px) {
   .teacher-figure {
     width:88px;
     height:112px;
     flex-basis:88px;
+  }
+  .teacher-state-wrong {
+    width:108px;
+    height:136px;
+    flex-basis:108px;
+    margin-top:-14px;
+    margin-left:-10px;
+    margin-right:-6px;
   }
   .scene-wrapper {
     gap:6px;
@@ -237,31 +221,53 @@ const cssStyles = `
   gap:10px;
 }
 
-.bubble-container {
+.question-card {
   flex:1;
   position:relative;
-  min-height:92px;
-  padding:16px 48px 16px 16px;
-  border-radius:22px;
-  border:2px solid #dbeafe;
+  min-height:96px;
+  padding:16px 16px 16px 14px;
+  border-radius:24px;
+  border:2px solid #e0f2fe;
   border-bottom-width:5px;
-  background:#ffffff;
-  box-shadow:0 8px 18px rgba(37,99,235,0.08);
+  background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);
+  box-shadow:0 12px 24px rgba(37,99,235,0.08);
   display:flex;
   align-items:center;
-  overflow:visible;
+  gap:12px;
+  overflow:hidden;
 }
-.bubble-tail {
-  position:absolute;
-  left:-9px;
-  top:31px;
-  width:16px;
-  height:16px;
-  background:#ffffff;
-  border-left:2px solid #dbeafe;
-  border-bottom:2px solid #dbeafe;
-  transform:rotate(45deg);
-  border-bottom-left-radius:4px;
+.question-audio-btn {
+  flex:0 0 42px;
+  width:42px;
+  height:42px;
+  border-radius:16px;
+  border:2px solid #bfdbfe;
+  border-bottom-width:5px;
+  background:#eff6ff;
+  color:#1d4ed8;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 8px 16px rgba(59,130,246,.10);
+}
+.question-audio-btn.playing {
+  background:#dbeafe;
+  color:#1d4ed8;
+  border-color:#93c5fd;
+}
+.question-audio-btn:active {
+  transform:translateY(3px);
+  border-bottom-width:2px;
+}
+.listen-hint {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:#2563eb;
+  font-size:12px;
+  font-weight:900;
+  padding:0 4px;
 }
 
 .bubble-text {
@@ -347,34 +353,6 @@ const cssStyles = `
   line-height:1.65;
 }
 
-.bubble-audio-btn {
-  position:absolute;
-  right:12px;
-  top:12px;
-  flex-shrink:0;
-  width:31px;
-  height:31px;
-  margin:0;
-  border-radius:9999px;
-  border:2px solid #ddf4ff;
-  background:#ffffff;
-  color:#1cb0f6;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-  box-shadow:0 3px 0 #ddf4ff;
-}
-.bubble-audio-btn.playing {
-  background:#ddf4ff;
-  color:#1cb0f6;
-  border-color:#84d8ff;
-  box-shadow:0 3px 0 #84d8ff;
-}
-.bubble-audio-btn:active {
-  transform:translateY(3px);
-  box-shadow:none;
-}
 
 .question-image {
   width:100%;
@@ -409,8 +387,8 @@ const cssStyles = `
 
 .option-card {
   background:#fff;
-  border-radius:16px;
-  padding:14px;
+  border-radius:18px;
+  padding:15px;
   border:2px solid #e5e7eb;
   border-bottom-width:5px;
   cursor:pointer;
@@ -418,11 +396,11 @@ const cssStyles = `
   display:flex;
   align-items:center;
   justify-content:center;
-  min-height:68px;
+  min-height:72px;
   position:relative;
   user-select:none;
   -webkit-tap-highlight-color:transparent;
-  box-shadow:0 2px 0 rgba(0,0,0,0.02);
+  box-shadow:0 8px 20px rgba(15,23,42,0.04);
 }
 .option-card:active {
   transform:translateY(2px);
@@ -451,6 +429,18 @@ const cssStyles = `
 .option-card.locked {
   cursor:default;
   transform:none;
+}
+.option-card.disabled {
+  cursor:not-allowed;
+  opacity:.48;
+  filter:grayscale(.15);
+  background:#f8fafc;
+  border-color:#e2e8f0;
+  color:#94a3b8;
+}
+.option-card.disabled:active {
+  transform:none;
+  border-bottom-width:5px;
 }
 .option-card.has-image-layout {
   flex-direction:column;
@@ -852,6 +842,11 @@ function playBeep(type = 'tap') {
         ? [
             { frequency: 240, start: 0, duration: 0.1, volume: 0.055 },
             { frequency: 170, start: 0.11, duration: 0.14, volume: 0.05 },
+          ]
+        : type === 'submit'
+        ? [
+            { frequency: 560, start: 0, duration: 0.055, volume: 0.035 },
+            { frequency: 700, start: 0.055, duration: 0.06, volume: 0.03 },
           ]
         : [{ frequency: 520, start: 0, duration: 0.06, volume: 0.03 }];
 
@@ -1448,33 +1443,6 @@ function buildChoiceQuestionPayloadForDeepSeek({
   return `${qText}||${wrongText}||${correctText}`;
 }
 
-function buildSimilarQuestionGenerationPrompt({ questionText, options, correctAnswers }) {
-  return [
-    '你现在不是讲题，而是生成一道新的互动选择题。',
-    '请根据下面原题生成一道同类型、同难度的新题。',
-    '',
-    '必须只输出合法 JSON，不要 Markdown，不要代码块，不要解释。',
-    'JSON 必须符合这个结构：',
-    CHOICE_QUESTION_SCHEMA_TEXT.trim(),
-    '',
-    '规则：',
-    '1. options 必须是 A、B、C、D 四个选项。',
-    '2. correctAnswer 必须是 A/B/C/D 之一。',
-    '3. 题干和选项适合直接给 React 选择题组件渲染。',
-    '4. explanation 要简短，适合作为题库解析。',
-    '5. 不要复用原题原句，要生成新的题。',
-    '',
-    '原题：',
-    questionText || '',
-    '',
-    '原选项：',
-    options.map((option) => `${normalizeOptionId(option.id)}. ${option.text || ''}`).join('\n'),
-    '',
-    '原正确答案：',
-    correctAnswers.join(', '),
-  ].join('\n');
-}
-
 function useTimeoutManager() {
   const timeoutsRef = useRef(new Set());
 
@@ -1726,6 +1694,7 @@ const OptionCard = memo(function OptionCard({
   isCorrectAnswer,
   isSpeaking,
   isBouncing,
+  isDisabled,
   showPinyin,
   onToggle,
 }) {
@@ -1735,7 +1704,8 @@ const OptionCard = memo(function OptionCard({
   const className = useMemo(() => {
     let cls = 'option-card';
     if (hasImage) cls += ' has-image-layout';
-    if (isBouncing) cls += ' bounce-in';
+    if (isBouncing && !isDisabled) cls += ' bounce-in';
+    if (isDisabled && !isSubmitted) cls += ' disabled';
 
     if (isSubmitted) {
       cls += ' locked';
@@ -1748,7 +1718,7 @@ const OptionCard = memo(function OptionCard({
     }
 
     return cls;
-  }, [hasImage, isBouncing, isCorrectAnswer, isSelected, isSpeaking, isSubmitted]);
+  }, [hasImage, isBouncing, isCorrectAnswer, isDisabled, isSelected, isSpeaking, isSubmitted]);
 
   const optionPinyin = useMemo(() => {
     if (!showPinyin || !containsChinese(option.text)) return '';
@@ -1756,7 +1726,12 @@ const OptionCard = memo(function OptionCard({
   }, [option.text, showPinyin]);
 
   return (
-    <button className={className} onClick={() => onToggle(optionId)} type="button">
+    <button
+      className={className}
+      disabled={isDisabled && !isSubmitted}
+      onClick={() => onToggle(optionId)}
+      type="button"
+    >
       {isSpeaking ? (
         <FaSpinner className="absolute top-3 right-3 text-blue-500 animate-spin" />
       ) : null}
@@ -1834,6 +1809,7 @@ export default function XuanZeTi({
   const [questionImgVisible, setQuestionImgVisible] = useState(Boolean(questionImg));
   const [showAIExplanation, setShowAIExplanation] = useState(false);
   const [isDeepSeekOpening, setIsDeepSeekOpening] = useState(false);
+  const [questionReadDone, setQuestionReadDone] = useState(!questionText);
 
   const [prefs, setPrefs] = useState(() => getMergedPrefs());
   const [aiSettings, setAISettings] = useState(() => getMergedAISettings());
@@ -1916,7 +1892,8 @@ export default function XuanZeTi({
 
   const teacherState = useMemo(() => {
     if (isDeepSeekOpening || showAIExplanation) return 'thinking';
-    if (isQuestionPlaying || speakingOptionId) return 'speaking';
+    if (isQuestionPlaying) return 'speaking';
+    if (speakingOptionId) return 'thinking';
     if (isSubmitted) return isRight ? 'correct' : 'wrong';
     return 'idle';
   }, [isDeepSeekOpening, isQuestionPlaying, isRight, isSubmitted, showAIExplanation, speakingOptionId]);
@@ -1930,6 +1907,11 @@ export default function XuanZeTi({
   const feedbackTap = useCallback(() => {
     if (aiSettings.vibration) vibrate(15);
     if (aiSettings.soundFx) playBeep('tap');
+  }, [aiSettings.soundFx, aiSettings.vibration]);
+
+  const feedbackSubmit = useCallback(() => {
+    if (aiSettings.vibration) vibrate(18);
+    if (aiSettings.soundFx) playBeep('submit');
   }, [aiSettings.soundFx, aiSettings.vibration]);
 
   const feedbackCorrect = useCallback(() => {
@@ -1950,7 +1932,11 @@ export default function XuanZeTi({
       questionText,
       { rate: currentRate, aiSettings },
       () => mountedRef.current && setIsQuestionPlaying(true),
-      () => mountedRef.current && setIsQuestionPlaying(false)
+      () => {
+        if (!mountedRef.current) return;
+        setIsQuestionPlaying(false);
+        setQuestionReadDone(true);
+      }
     );
   }, [aiSettings, currentRate, questionText]);
 
@@ -1981,6 +1967,7 @@ export default function XuanZeTi({
     setCardPopId(null);
     setShowAIExplanation(false);
     setIsDeepSeekOpening(false);
+    setQuestionReadDone(!questionText);
     resetOverlayStack();
 
     if (questionText && autoPlayRef.current) {
@@ -1989,7 +1976,11 @@ export default function XuanZeTi({
           questionText,
           { rate: currentRateRef.current, aiSettings: aiSettingsRef.current },
           () => mountedRef.current && setIsQuestionPlaying(true),
-          () => mountedRef.current && setIsQuestionPlaying(false)
+          () => {
+            if (!mountedRef.current) return;
+            setIsQuestionPlaying(false);
+            setQuestionReadDone(true);
+          }
         );
       }, 260);
     }
@@ -2026,7 +2017,7 @@ export default function XuanZeTi({
 
   const toggleOption = useCallback(
     (optionId) => {
-      if (isSubmitted) return;
+      if (isSubmitted || !questionReadDone) return;
 
       feedbackTap();
 
@@ -2056,13 +2047,16 @@ export default function XuanZeTi({
       correctAnswers.length,
       feedbackTap,
       isSubmitted,
+      questionReadDone,
       playOptionText,
       shuffledOptions,
     ]
   );
 
   const handleSubmit = useCallback(() => {
-    if (!selectedIds.length || isSubmitted) return;
+    if (!selectedIds.length || isSubmitted || !questionReadDone) return;
+
+    feedbackSubmit();
 
     const correct =
       selectedIds.length === correctAnswers.length &&
@@ -2084,10 +2078,12 @@ export default function XuanZeTi({
   }, [
     correctAnswers,
     feedbackCorrect,
+    feedbackSubmit,
     feedbackWrong,
     isSubmitted,
     onCorrect,
     onWrong,
+    questionReadDone,
     selectedIds,
     stopAllAudio,
   ]);
@@ -2148,22 +2144,6 @@ export default function XuanZeTi({
     stopAllAudio,
   ]);
 
-  const handleGenerateSimilarQuestion = useCallback(() => {
-    stopAllAudio();
-
-    const generationPrompt = buildSimilarQuestionGenerationPrompt({
-      questionText,
-      options: shuffledOptions,
-      correctAnswers,
-    });
-
-    const payload = `${generationPrompt}||生成同类互动选择题||只输出组件可用 JSON`;
-    openDeepSeekQuestionMode({
-      title: 'DeepSeek 出同类题',
-      prompt: payload,
-      mode: 'question',
-    });
-  }, [correctAnswers, questionText, shuffledOptions, stopAllAudio]);
 
   const handleOpenAIExplanation = useCallback(() => {
     stopAllAudio();
@@ -2188,7 +2168,9 @@ export default function XuanZeTi({
       <div className="xzt-header">
         <div className="w-full relative">
           <div className="top-hint-row">
-            <div className="top-left-text">请选择正确答案</div>
+            <div className={`top-left-text ${questionReadDone ? '' : 'locked'}`}>
+              {questionReadDone ? '请选择正确答案' : '先听一遍题目，再选择答案'}
+            </div>
 
             <div className="top-actions">
               <button className="settings-btn" onClick={handleOpenSettings} type="button">
@@ -2201,20 +2183,18 @@ export default function XuanZeTi({
             <AnimatedTeacher state={teacherState} />
 
             <div className="question-zone">
-              <div className="bubble-container">
-                <div className="bubble-tail" />
-
+              <div className="question-card">
                 {questionText ? (
                   <button
-                    className={`bubble-audio-btn ${isQuestionPlaying ? 'playing' : ''}`}
+                    className={`question-audio-btn ${isQuestionPlaying ? 'playing' : ''}`}
                     onClick={playQuestion}
                     aria-label="播放题干"
                     type="button"
                   >
                     {isQuestionPlaying ? (
-                      <FaSpinner className="animate-spin" size={12} />
+                      <FaSpinner className="animate-spin" size={14} />
                     ) : (
-                      <FaVolumeUp size={12} />
+                      <FaVolumeUp size={15} />
                     )}
                   </button>
                 ) : null}
@@ -2228,6 +2208,10 @@ export default function XuanZeTi({
                   )}
                 </div>
               </div>
+
+              {!questionReadDone ? (
+                <div className="listen-hint">🔊 题目朗读完成后才可以选择答案</div>
+              ) : null}
 
               {questionImg && questionImgVisible ? (
                 <img
@@ -2256,6 +2240,7 @@ export default function XuanZeTi({
                 isCorrectAnswer={correctAnswers.includes(optionId)}
                 isSpeaking={speakingOptionId === optionId}
                 isBouncing={cardPopId === optionId}
+                isDisabled={!questionReadDone}
                 showPinyin={prefs.showOptionPinyin}
                 onToggle={toggleOption}
               />
@@ -2268,11 +2253,11 @@ export default function XuanZeTi({
         <div className="submit-bar">
           <button
             className="submit-btn"
-            disabled={!selectedIds.length}
+            disabled={!questionReadDone || !selectedIds.length}
             onClick={handleSubmit}
             type="button"
           >
-            检查答案
+            {questionReadDone ? '检查答案' : '请先听题'}
           </button>
         </div>
       ) : null}
@@ -2294,10 +2279,6 @@ export default function XuanZeTi({
         <div className="result-actions">
           <button className="ai-btn" onClick={handleOpenAIExplanation} type="button">
             <FaRobot /> {aiMode === 'deepseek' ? 'DeepSeek 解析' : isRight ? '为什么对？' : 'AI 解析'}
-          </button>
-
-          <button className="ai-btn secondary" onClick={handleGenerateSimilarQuestion} type="button">
-            <FaRobot /> DeepSeek 出同类题
           </button>
         </div>
 
